@@ -10,7 +10,7 @@ from utils import *
 
 # settings
 voigt_is_tau = 1 # whether to treat sum(Voigt1Ds) as tau and flux=exp(-tau)
-para_set = 'blgNHI' # 'blgNHI' (used in generate_spec.voigt1d) or 'fLfG' (used in astropy.Voigt1D)
+para_set = 'fLfG' # 'blgNHI' (used in generate_spec.voigt1d) or 'fLfG' (used in astropy.Voigt1D)
 # derived
 if para_set=='blgNHI': voigt_is_tau = True
 

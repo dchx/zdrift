@@ -263,12 +263,18 @@ def parray2flux_dz(parray, lam, shiftmode, dz, zqso, continuum=1., voigt_is_tau=
 	if tosave and os.path.exists(tosave):
 		flux = pkload(tosave, verbose=False)
 	else:
-		# shift lam0s
-		if shiftmode=='dl': dlmda = dz
-		elif shiftmode=='dz': dlmda = dz / (1. + zqso) * parray[0]
-		elif shiftmode=='dv': dlmda = dz / c.c.to('cm/s').value * parray[0]
-		else: raise ValueError("shiftmode should be dz or dl, not %s."%mode)
-		parray[0] += dlmda
+		# shift lam0s for dl
+		if 'dl' in shiftmode: parray[0] += dz
+		else: # dz or dv
+			# shift lam0s
+			if 'dz' in shiftmode: factor = 1. + dz / (1. + zqso)
+			elif 'dv' in shiftmode: factor = 1. + dz / c.c.to('cm/s').value
+			else: raise ValueError("shiftmode should be dz, dl ov dv, not %s."%mode)
+			parray[0] *= factor
+			# shift line widths
+			if 'lw' in shiftmode:
+				parray[2] *= factor
+				if v1d.__name__=='Voigt1D': parray[3] *= factor
 		# flux
 		flux = parray2flux(parray, lam, continuum=continuum, voigt_is_tau=voigt_is_tau, v1d=v1d)
 		if tosave: pkdump(flux, tosave)

@@ -175,14 +175,14 @@ if __name__ == '__main__':
 	nphot = 1.69e8 # for add_shot_noise
 	CSL_cut = 1.5 # for region detection in voigt fitting, default 1.5
 	ntrial = 100
-	chunk_flux_threshold = 'gradchk' # 'gradchk' for chunking by gradient, 'vfregchk' for chunking by voigtforest regions, 0.8, 0.975
+	chunk_flux_threshold = 'vfregchk' # 'gradchk' for chunking by gradient, 'vfregchk' for chunking by voigtforest regions, 0.8, 0.975
 	vfaddline = True # whether to try add lines when fitting voigtforest
-	shiftmode = 'dv' # 'dz' / 'dv' / 'dl'
-	if shiftmode=='dz':
+	shiftmode = 'dvlw' # 'dz' / 'dv' / 'dl' (+ 'lw' for adjusting line width too)
+	if 'dz' in shiftmode:
 		real_dx = 0. # real dz for the second epoch
 		delta_dx = 5e-11 # 2e-10 dz testing step
 		testrange = 1e-8 # 5e-8 determines the dz test range [real_dx +/- test_range]
-	elif shiftmode=='dv':
+	elif 'dv' in shiftmode:
 		real_dx = 21.3 # (cm/s) real dv for the second epoch
 		delta_dx = 0.2 # (cm/s) dv testing step
 		testrange = 40. # (cm/s) determines the dv test range [real_dx +/- test_range]
@@ -318,13 +318,13 @@ if __name__ == '__main__':
 			#	plt.show()
 			# ^testing
 			dvfits[:, i] = dxtests[np.argmax(corrs, axis=1)] # size:nchk, dz with max corrs for each chunk
-			if shiftmode=='dz': dvfits[:, i] = dz2dv(dvfits[:, i], zqso)
+			if 'dz' in shiftmode: dvfits[:, i] = dz2dv(dvfits[:, i], zqso)
 			print('Trial %02d, cost %.2f min, total %.2f min, dvfit median: %.2f cm/s'%(i, (time.time()-t1)/60., (time.time()-t0)/60., np.median(dvfits[:, i])))
 		# save dvfits
 		pkdump(dvfits, dvfits_file)
 	
 	# ----- calculate sigma -----
-	if shiftmode=='dz': real_dx = dz2dv(real_dx, zqso) # convert real_dx to real_dv
+	if 'dz' in shiftmode: real_dx = dz2dv(real_dx, zqso) # convert real_dx to real_dv
 	print('real dv: %.2f cm/s'%real_dx)
 	relaerr_all = np.abs((real_dx - dvfits) / testrange)
 	dvfits2sigma(dvfits, relaerr_all, relaerr_thrshld, dvstd_thrshld, bs_time)
