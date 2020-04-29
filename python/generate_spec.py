@@ -46,6 +46,7 @@ b_distribution = b_gen(name='b', a=0.)
 NHI_left = 1e12
 NHI_right = 1e16
 a_dndNHI = 4.9e7
+a_dndNHI = 3.537165443330732e8 # to give 100 lines with 13.64 < log N H I (cm−2 ) < 16 per unit redshift
 b_dndNHI = 1.46 # Kim2001
 if LiskeDist: b_dndNHI = 1.5 # LiskeDist
 def dndNHI(NHI):
@@ -127,9 +128,10 @@ def nlines(z_qso, zleft=z_left, NHIleft=NHI_left, NHIright=NHI_right):
 	left = max(zleft, z_lyb(z_qso))
 	nl = int_dndz(left, z_qso)
 	# convert nlines in 13.64 < log10(NHI) < 16 to designated NHI range
-	NHI_norm_factor = int_dndNHI(NHIleft, NHIright) / int_dndNHI(10.**13.64, 1e16) 
-	nl = nl * NHI_norm_factor
-	nl = np.random.poisson(nl)
+	#NHI_norm_factor = int_dndNHI(NHIleft, NHIright) / int_dndNHI(10.**13.64, 1e16) 
+	#nl = nl * NHI_norm_factor
+	#nl = np.random.poisson(nl)
+	nl = 1
 	return int(round(nl))
 
 # ----------- combined distribution -----------
@@ -226,12 +228,11 @@ def voigt1d(lam0, lgNHI, b, gamma=gamma_lya):
 	def v1d(lam): return tau_lam(lam, b, NHI, lam0, gamma)
 	return v1d
 
-def multivoigt_parray(parray, lam, v1d=voigt1d):
+def multivoigt_parray(parray, lam, v1d=voigt1d, verbose=False):
 	'''
 	Compute multivoigt from an parameter array
 	Inputs: parray - [nparas, nlines]
 	'''
-	verbose = 0
 	tau = np.zeros(len(lam))
 	if verbose: print('%d lines'%len(parray.T))
 	for iline, args in enumerate(parray.T):
@@ -280,7 +281,7 @@ def parray2flux_dz(parray, lam, shiftmode, dz, zqso, continuum=1., voigt_is_tau=
 		if tosave: pkdump(flux, tosave)
 	return flux
 
-def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True, shiftmode='dz', ispec=None):
+def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True, shiftmode='dz', ispec=None, verbose=True):
 	'''
 	zqso - redshift of quassar
 	res - spectral resolution, used if fix=='res'
@@ -310,7 +311,7 @@ def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True,
 
 	spec_file = path + 'data/gen_spec/gen_spec%s_zqso%.1f%s_%s%.3e%s.pickle'%(restframetxt,zqso,restxt,shiftmode,dz,suffix)
 	if os.path.exists(spec_file):# and __name__!='__main__': # load previously saved spectra, all not added noise
-		lam, flux = pkload(spec_file)
+		lam, flux = pkload(spec_file, verbose=verbose)
 	else:
 		left = max(z_left, z_lyb(zqso)) # spectra left bound in z
 		# wavelength range

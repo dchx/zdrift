@@ -12,6 +12,7 @@ from skimage.feature.peak import peak_local_max
 import astropy.units as u
 import astropy.constants as c
 from astropy.modeling.models import Voigt1D
+from astropy.modeling.models import Gaussian1D
 from astropy import cosmology
 
 #path = '/astro/homes/dcx/dcxroot/zdrift/spec_sim/'
@@ -50,10 +51,6 @@ def expand_plt_range(range0,factor=0.1):
 	mini,maxi=range0
 	dist=maxi-mini
 	return mini-factor*dist, maxi+factor*dist
-
-def lam_obs(lam,z):
-	# return observed lya wavelength (A) at redshift z
-	return lam*(z+1.)
 
 def ra_hms2deg(rastr):
 	# convert RA 'hh:mm:ss.ss' to degrees
@@ -176,15 +173,19 @@ def connect_chunks(specs):
 
 def add_shot_noise(flux, nphot, sky=1e-12, return_error=False):
 	'''
-	flux normalized to [0, 1]
+	flux should be normalized to [0, 1]
 	'''
-	flux_nphot = (flux + sky) * nphot
-	err_nphot = flux_nphot**0.5
-	#print('flux percentage error after adding noise:', np.mean(np.abs(err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)))/flux_nphot))
-	#flux_nphot=flux_nphot+err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)) # use normal with sigma=sqrt(flux_nphot)
-	flux_nphot_werr = np.random.poisson(flux_nphot) # use poisson
-	flux_werr = flux_nphot_werr / float(nphot) - sky
-	error = err_nphot / float(nphot)
+	if nphot==np.inf: # no error
+		flux_werr = flux
+		error = np.zeros(flux.shape)
+	else:
+		flux_nphot = (flux + sky) * nphot
+		err_nphot = flux_nphot**0.5
+		#print('flux percentage error after adding noise:', np.mean(np.abs(err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)))/flux_nphot))
+		#flux_nphot=flux_nphot+err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)) # use normal with sigma=sqrt(flux_nphot)
+		flux_nphot_werr = np.random.poisson(flux_nphot) # use poisson
+		flux_werr = flux_nphot_werr / float(nphot) - sky
+		error = err_nphot / float(nphot)
 	if return_error: return flux_werr, error
 	else: return flux_werr
 

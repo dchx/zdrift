@@ -103,8 +103,8 @@ def chunk_spec(lam, flux, minlinesize=3, chunk_flux_threshold='gradchk'):
 		fmax=np.max(flux)
 		tmp1[flux > chunk_flux_threshold * fmax] = flux[flux > chunk_flux_threshold * fmax]
 		chk_boundinds = zero_runs(tmp1)
-	else: return None
-	# -----
+	else: return None # e.g. when chunk_flux_threshold=='vfregchk'
+	# ----- filter by minlinesize
 	linesize = chk_boundinds[:,1] - chk_boundinds[:,0]
 	jlines = [k for k in range(len(linesize)) if linesize[k] >= minlinesize] # index of chunks of qualified chunks (len>=minlinesize)
 	chk_boundinds = chk_boundinds[jlines]
@@ -120,7 +120,7 @@ def dvfits2dv(dvfits_masked):
 	dvstd = np.ma.std(dvfits_pertrial, ddof=1)
 	return dvmean, dvstd
 
-def dvfits2sigma(dvfits, relaerr_all, relaerr_thrshld=0.75, dvstd_thrshld=20., bs_time=1000):
+def dvfits2sigma(dvfits, relaerr_all=None, relaerr_thrshld=0.75, dvstd_thrshld=20., bs_time=1000, bootstrap=True):
 	'''
 	Estimate sigma from dvfits array
 	-------
@@ -128,7 +128,9 @@ def dvfits2sigma(dvfits, relaerr_all, relaerr_thrshld=0.75, dvstd_thrshld=20., b
 	relaerr_thrshld - (default 0.75) maximum relative error
 	dvstd_thrshld - (default 20, cm/s) maximum std in dv over ntrials
 	bs_time - (default 1000) number of bootstrapping resamples
+	          if bs_time==1, do not do bootstrapping
 	'''
+	dvfits = np.ma.masked_invalid(dvfits) # mask nan and inf values
 	plot = 0
 	if plot:
 		plt.figure()
@@ -138,11 +140,13 @@ def dvfits2sigma(dvfits, relaerr_all, relaerr_thrshld=0.75, dvstd_thrshld=20., b
 
 	# filter dvfits
 	# mask dv result data by relaerr_thrshld
-	dvfits_masked = np.ma.masked_where(relaerr_all > relaerr_thrshld, dvfits)
+	if np.any(relaerr_all): dvfits_masked = np.ma.masked_where(relaerr_all > relaerr_thrshld, dvfits)
+	else: dvfits_masked = dvfits
 	print('Drop large relative error dv, estimated dv: %.2f +/- %.2e cm/s'%dvfits2dv(dvfits_masked))
 	
 	# compute std and dropout high std chunks
 	vstd_perchk = np.ma.std(dvfits_masked, axis=1, ddof=1) # size:nchk, std over ntrials
+	print('vstd_perchk median:', np.ma.median(vstd_perchk))
 	ichk_tokeep = vstd_perchk < dvstd_thrshld
 	dvfits_masked = dvfits_masked[ichk_tokeep]
 	print('Drop high std chunks, estimated dv: %.2f +/- %.2e cm/s'%dvfits2dv(dvfits_masked))
@@ -150,13 +154,15 @@ def dvfits2sigma(dvfits, relaerr_all, relaerr_thrshld=0.75, dvstd_thrshld=20., b
 	# bootstrapping to compute sigma with error
 	sigvs = [] # size(bs_time), sigma_vs of each bootstrapping sample
 	for i in range(bs_time):
-		inds = np.random.randint(0,dvfits.shape[1],dvfits.shape[1]) # dvfit.shape[1] == ntrial
+		if bs_time==1: inds = np.arange(dvfits.shape[1])
+		else: inds = np.random.randint(0,dvfits.shape[1],dvfits.shape[1]) # dvfit.shape[1] == ntrial
 		vstd_perchk = np.ma.std(dvfits_masked[:,inds], axis=1, ddof=1) # size(nchunk), std over ntrials
 		vstd_perchk = vstd_perchk[vstd_perchk > 0] # filter not to divide by zero
 		sigvs.append(np.sqrt(1./np.ma.sum(1./(vstd_perchk**2.))))
 	sigv = np.mean(sigvs)
 	sigv_err = np.std(sigvs, ddof=1)
 	print('sigma: %.2e +/- %.2e cm/s'%(sigv, sigv_err))
+	return sigv
 
 if __name__ == '__main__':
 	# ---------- set up parameters ----------
@@ -172,24 +178,26 @@ if __name__ == '__main__':
 	fixres = 'resele' # 'res' or 'resele', whether to fix R or resolution element size (vs lam)
 	dlam_fixresele = 0.0125 # AA per pixel, useful only if fixres=='resele'
 	res_fixres = 2e4 # R, useful only if fexres=='res'
-	nphot = 1.69e8 # for add_shot_noise
+	nphot2 = 1.69e8 # npoht for epoch 2 for add_shot_noise
+	nphot1 = 1**2. * nphot2 # nphot for epoch 1 for add_shot_noise
 	CSL_cut = 1.5 # for region detection in voigt fitting, default 1.5
+	ntemplate = 1 # number of templates to generate; if 1: only template 0 from line list, if 2: another template from voigtfit to epoch 1 spectra
 	ntrial = 100
 	chunk_flux_threshold = 'vfregchk' # 'gradchk' for chunking by gradient, 'vfregchk' for chunking by voigtforest regions, 0.8, 0.975
 	vfaddline = True # whether to try add lines when fitting voigtforest
-	shiftmode = 'dvlw' # 'dz' / 'dv' / 'dl' (+ 'lw' for adjusting line width too)
+	shiftmode = 'dv' # 'dz' / 'dv' / 'dl' (+ 'lw' for adjusting line width too)
 	if 'dz' in shiftmode:
 		real_dx = 0. # real dz for the second epoch
 		delta_dx = 5e-11 # 2e-10 dz testing step
-		testrange = 1e-8 # 5e-8 determines the dz test range [real_dx +/- test_range]
+		testrange = 5e-8 # 5e-8 determines the dz test range [real_dx +/- test_range]
 	elif 'dv' in shiftmode:
 		real_dx = 21.3 # (cm/s) real dv for the second epoch
-		delta_dx = 0.2 # (cm/s) dv testing step
-		testrange = 40. # (cm/s) determines the dv test range [real_dx +/- test_range]
+		delta_dx = 0.4  # 0.2 0.4 (cm/s) dv testing step
+		testrange = 390. # 40 200 (cm/s) determines the dv test range [real_dx +/- test_range]
 	###### settings not shown in runid
 	minlinesize = 3 # pixel, min size for each chunk
 	######### dvfits to sigma parameters
-	relaerr_thrshld = 0.4 #0.75
+	relaerr_thrshld = 0.75 #0.75
 	dvstd_thrshld = +np.inf # (cm/s)
 	bs_time = 1000
 	# ---------- set up parameters end ----------
@@ -206,15 +214,20 @@ if __name__ == '__main__':
 		zqso = matched['z'][ind]
 		saveid = saveid_func(ind)
 		runid = saveid
+	if ntemplate==1 and chunk_flux_threshold=='vfregchk':
+		print("Cannot do vfregchk: not generating 2nd template.\n    Switching to gradchk.")
+		chunk_flux_threshold = 'gradchk'
 	
 	# runid used in dvfits_file
 	runid = linelistmode + '_' + runid
 	runid += '_vf%s'%vf.para_set # voigtforest use blgNHI (generate_spec.voigt1d) or fLfG (astropy.Voigt1D)
 	runid += '_dlam%.3e'%dlam_fixresele if fixres=='resele' else '_R%.1e'%res_fixres if fixres == 'res' else '' # restxt
-	runid += '_Nphot%.2e'%nphot if nphot==1.69e8 else '_Nphot%.0e'%nphot # nphottxt
+	runid += '_Nphot%.2e'%nphot2 # nphot for epoch 2
+	runid += '_epoch1Nphot%.2e'%nphot1 if nphot1!=nphot2 else '' # nphot for epoch 1
 	runid += '_CSLcut%.1f'%CSL_cut # csltxt
 	runid += '_vfaddline' if vfaddline else '_vfnoaddline'
 	runid += '_shift%s'%shiftmode
+	runid += '_1template' if ntemplate==1 else '' if ntemplate==2 else ''
 	specid = runid # used in vf_tosave and testspec_file
 	runid += '_addnoise' if (ntrial == 1) else '_addnoise%dmean'%ntrial # addnoisetxt
 	runid += '_%s'%chunk_flux_threshold if type(chunk_flux_threshold)==str else '_chk%.3fflux'%chunk_flux_threshold # chunking method
@@ -239,25 +252,26 @@ if __name__ == '__main__':
 		elif linelistmode == 'keck':
 			lam, flux1_temp = keck_template()
 		chk_boundinds = chunk_spec(lam, flux1_temp, minlinesize, chunk_flux_threshold) # chunk by epoch 1 template
-		
+
 		# ----- get voigtforest parameters for 2nd template -----
-		vf_tosave = path + 'paras/voigtforest_bestp_simed_%s.pzip'%(specid)
-		# add noise to epoch 1 original template, get epoch 1 spectrum
-		flux1, flux1_err = add_shot_noise(flux1_temp, nphot, return_error=True)
-		# fit voigtforest to epoch 1 spectrum, get result parray, chunk by voigtforest regions
-		voigtresult, reg_boundinds = vf.fit_forest(lam, flux1, flux1_err, tosave=vf_tosave, addline=vfaddline, CSLcut=CSL_cut, chkind=True)
-		vfparray = vf.results2parray(voigtresult)
-		# chunk by voigtforest regions
-		if chunk_flux_threshold=='vfregchk': chk_boundinds = reg_boundinds
-		# testing voigtforest fit
-		plot = 0
-		if plot:
-			plt.figure()
-			fluxtest_temp = gs.parray2flux(vfparray, lam, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
-			plt.plot(lam, flux1_temp, 'k', lw=0.5) # plot epoch 1 template
-			plt.plot(lam, fluxtest_temp, 'r', lw=0.5) # plot voigtfit of epoch 1 spectrum
-			plt.show()
-		
+		if ntemplate==2:
+			vf_tosave = path + 'paras/voigtforest_bestp_simed_%s.pzip'%(specid)
+			# get epoch 1 spectrum by adding noise to original template
+			flux1, flux1_err = add_shot_noise(flux1_temp, nphot1, return_error=True)
+			# fit voigtforest to epoch 1 spectrum, get result parray, chunk by voigtforest regions
+			voigtresult, reg_boundinds = vf.fit_forest(lam, flux1, flux1_err, tosave=vf_tosave, addline=vfaddline, CSLcut=CSL_cut, chkind=True)
+			vfparray = vf.results2parray(voigtresult)
+			# chunk by voigtforest regions
+			if chunk_flux_threshold=='vfregchk': chk_boundinds = reg_boundinds
+			# testing voigtforest fit
+			plot = 0
+			if plot:
+				plt.figure()
+				fluxtest_temp = gs.parray2flux(vfparray, lam, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
+				plt.plot(lam, flux1_temp, 'k', lw=0.5) # plot epoch 1 template
+				plt.plot(lam, fluxtest_temp, 'r', lw=0.5) # plot voigtfit of epoch 1 spectrum
+				plt.show()
+
 		# ----- do correlation, find best dz -----
 		dvfits = np.zeros([len(chk_boundinds),ntrial]) # the best fit redshift for each of 100 trials for each chunk
 		t0 = time.time()
@@ -265,13 +279,21 @@ if __name__ == '__main__':
 		for i in range(ntrial): # try 100 times
 			t1 = time.time()
 			# add noise to epoch 2 original template
-			flux2 = add_shot_noise(flux2_temp, nphot, return_error=False)
+			flux2 = add_shot_noise(flux2_temp, nphot2, return_error=False)
 			# test different dz
 			corrs = np.zeros([len(chk_boundinds),len(dxtests)])
 			for idz in range(len(dxtests)): # try each test dz
-				# shift vfparray to form 2nd template spectrum
+				# form 2nd template spectrum
 				testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idz])
-				fluxtest_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dxtests[idz], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file)
+				if ntemplate==1: # use original template
+					if linelistmode == 'genspec':
+						_, fluxtest_temp = gs.generate_spec(zqso, res=res_fixres, dlam=dlam_fixresele,\
+						                   fix=fixres, dz=dxtests[idz], rest_frame=False, shiftmode=shiftmode, ispec=ispec, verbose=False)
+					elif linelistmode == 'keck':
+						raise Exception("need to combine keck_template()")
+					fluxtest_temp = add_shot_noise(fluxtest_temp, nphot1)
+				elif ntemplate==2: # shift vfparray to form 2nd template spectrum
+					fluxtest_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dxtests[idz], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file)
 		
 				# correlation between 2nd template spectrum (fluxtest_temp) and epoch 2 spectrum (flux2)
 				for ichk in range(len(chk_boundinds)): # loop through chunks
