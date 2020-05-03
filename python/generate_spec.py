@@ -295,14 +295,14 @@ def lam_grid(lam_left, lam_right, fix, res=2e4, res_ele=4., dlam_fixresele=0.012
 		dlam = dlam_fixresele
 	else: raise Exception("argument 'fix' should be either 'res' or 'resele'")
 	# lam points
-	if os.path.exists(tosave):
+	if tosave!=None and os.path.exists(tosave):
 		lam = pkload(tosave)
 		if return_nlam: return np.size(lam)
 	else:
 		nlam = int(round((lam_right - lam_left) / dlam))
 		if return_nlam: return nlam
 		lam = np.linspace(lam_left, lam_right, nlam)
-		pkdump(lam, tosave)
+		if tosave!=None: pkdump(lam, tosave)
 	if fix == 'res': res_ele = np.mean(lam / dlam / res) # in pixels
 	elif fix == 'resele': res = lam / dlam / res_ele # no unit
 	return lam, res_ele

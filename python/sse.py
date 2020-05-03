@@ -33,7 +33,7 @@ def keck_intrinsic_lw(parray, R_keck, smoothwidth=None, dlam=None):
 	fv_intrin = np.array([least_fv_intrin[i] if fv_intrin_square[i]<least_fv_intrin[i]**2.\
 	                      else np.sqrt(fv_intrin_square[i]) for i in range(len(fv_obs))])
 	if len(paras)==2:
-		factor = fwhm_intrin / fv_obs
+		factor = fv_intrin / fv_obs
 		paras_adj = paras * factor
 	elif len(paras)==1: paras_adj = fv_intrin
 	parray[2:] = paras_adj
@@ -81,7 +81,6 @@ def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, v
 		
 		# save flux
 		pkdump(flux_temp, tempflux_file, verbose=True)
-
 	return lam, flux_temp
 
 def get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dz, genspec_args, keck_args, verbose=True):
@@ -219,7 +218,7 @@ def dvfits2sigma(dvfits, relaerr_all=None, relaerr_thrshld=0.75, dvstd_thrshld=2
 
 if __name__ == '__main__':
 	# ---------- set up parameters ----------
-	linelistmode = 'genspec' # 'genspec' or 'keck'
+	linelistmode = 'keck' # 'genspec' or 'keck'
 	### applying for differnt linelistmodes
 	class genspec_args:
 		zqso = 3.

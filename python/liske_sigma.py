@@ -15,7 +15,6 @@ def getspec(dz, z_genspec=None, ispec=None):
 	import sse_lya_sims_zlines_27jun2019_steve as sse
 	if z_genspec != None: lam, flux = generate_spec(z_genspec, res=2e4, dlam=0.0125, fix='resele', dz=dz, rest_frame=False, shiftmode='dz', ispec=ispec, verbose=True)
 	else: flux, lam = sse.mk_qso_spec3_dz(sse.z,dz,refparams=np.zeros([4,0]),res=2e4,addline=0,divide=1.,mode='dz')
-	print('lambda: ', np.min(lam), np.max(lam))
 	return lam, flux
 
 def spec_two_epoch(nphot, z_genspec=None, period=10., addnoise=2, cosmo=liske_cosmo, ispec=None):
