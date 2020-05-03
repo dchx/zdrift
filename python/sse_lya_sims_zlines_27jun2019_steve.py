@@ -14,7 +14,7 @@ import generate_spec as gs
 import voigtforest as vf
 import sse
 #from norm_koa import koa_normed_spec
-from continuum_fit import norm_spec
+from continuum_fit import get_keck_spec
 from cosmology import dz2dv
 from liske_sigma import sigma_liske_empir
 fwhm_smooth = smoothwidth/2.*2.355 * 0.01 #AA
@@ -25,7 +25,7 @@ soso_inds = 19, 31, 37, 48, 53, 54 # have peak at 0 but shorter than good peak
 bigpeak_inds = 24, 27, 28, 42, 44, 49, 50 # have spike like peak
 ind = 7
 #koa_spec = koa_normed_spec(ind)
-koa_spec = norm_spec(ind)
+koa_spec = get_keck_spec(ind, normalize=False)
 lamrange = [np.min(koa_spec[0]), np.max(koa_spec[0])] 
 saveid = saveid_func(ind)
 z = matched['z'][ind]
@@ -108,17 +108,6 @@ else:
 		fG=np.array(fG_list)
 		return lam0,AL,fL,fG
 
-def nlambda(res):
-	'''
-	number of lambda points
-	'''
-	lamextent = lamrange[1] - lamrange[0]
-	if koa_rest2obs: lamextent = obs_frame(lamextent, z) # convert to observed frame, assuming already in rest frame
-	if fixres == 'res': dlam = 5e3 / 4. / res # for 4 pix / resolution element at 5000 AA
-	elif fixres == 'resele': dlam = dlam_fixresele
-	nl = int(round(lamextent / dlam))
-	return nl
-
 def mk_qso_spec3_dz(zqso,dz,refparams,res,addline=250,divide=8.,mode='dz'):
 	# this version adds an additional 250 small lines, able to vary res
 	# additional line paras randomly drop from paras from the param_files
@@ -130,8 +119,7 @@ def mk_qso_spec3_dz(zqso,dz,refparams,res,addline=250,divide=8.,mode='dz'):
 	if os.path.exists(spec_file): # load previously saved spectra, all not added noise
 		lam, flux1 = pkload(spec_file, verbose=False)
 	else:
-		nl=nlambda(res)
-		lam = np.linspace(lamrange[0], lamrange[1], nl)
+		lam, res_ele = gs.lam_grid(lamrange[0], lamrange[1], fixres, res=res, dlam_fixresele=dlam_fixresele)
 		flux1 = multivoigt_dz(param_files,lam,zqso,dz,res,divide=divide,mode=mode)
 		# add 250 small lines
 		if addline:
@@ -160,7 +148,7 @@ def intrinsic_fwhm(fl_obs, fg_obs, lam0, smooth, R_keck=R_keck):
 	return np.squeeze(fv_intrin), np.squeeze(fv_obs)
 
 R_int = 1.
-n_int = nlambda(R_int)
+n_int = gs.lam_grid(lamrange[0], lamrange[1], fixres, res=R_int, dlam_fixresele=dlam_fixresele, return_nlam=True)
 def adjust_fwhm_byR(fl_para, fg_para, lam0, res):
 	fv_intrin, fv_para = intrinsic_fwhm(fl_para, fg_para, lam0, smooth)
 	if fixres == 'res': fwhm_ins = lam0 / res # my instrument fwhm

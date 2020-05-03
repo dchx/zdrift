@@ -174,17 +174,18 @@ def connect_chunks(specs):
 def add_shot_noise(flux, nphot, sky=1e-12, return_error=False):
 	'''
 	flux should be normalized to [0, 1]
+	sky - value in [0, 1], squeezes the spectrum to [sky, 1]
 	'''
 	if nphot==np.inf: # no error
 		flux_werr = flux
 		error = np.zeros(flux.shape)
 	else:
-		flux_nphot = (flux + sky) * nphot
+		flux_nphot = (flux + sky) / (1. + sky) * nphot
 		err_nphot = flux_nphot**0.5
 		#print('flux percentage error after adding noise:', np.mean(np.abs(err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)))/flux_nphot))
 		#flux_nphot=flux_nphot+err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)) # use normal with sigma=sqrt(flux_nphot)
 		flux_nphot_werr = np.random.poisson(flux_nphot) # use poisson
-		flux_werr = flux_nphot_werr / float(nphot) - sky
+		flux_werr = flux_nphot_werr / float(nphot) * (1. + sky) - sky
 		error = err_nphot / float(nphot)
 	if return_error: return flux_werr, error
 	else: return flux_werr

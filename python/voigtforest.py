@@ -293,11 +293,11 @@ if __name__ == '__main__':
 	#lam, flux, noise = generate_test_spec(nlines=50)
 	### use keck spectra
 	from norm_koa import koa_normed_spec
-	from continuum_fit import norm_spec
+	from continuum_fit import get_keck_spec
 	import sse_lya_sims_zlines_27jun2019_steve as sse
 	ind = int(sse.saveid[:2])
 	#koa_spec = koa_normed_spec(ind)
-	koa_spec = norm_spec(ind, local_dist=sse.fitcont_dist, poly_deg=sse.fitcont_deg, fitcont_mode=sse.fitcont_mode)
+	koa_spec = get_keck_spec(ind, local_dist=sse.fitcont_dist, poly_deg=sse.fitcont_deg, fitcont_mode=sse.fitcont_mode)
 	lam = koa_spec[0]; flux = koa_spec[1]; noise = koa_spec[2]
 	'''
 	plt.axhline(1,c='k')

@@ -46,7 +46,6 @@ b_distribution = b_gen(name='b', a=0.)
 NHI_left = 1e12
 NHI_right = 1e16
 a_dndNHI = 4.9e7
-a_dndNHI = 3.537165443330732e8 # to give 100 lines with 13.64 < log N H I (cm−2 ) < 16 per unit redshift
 b_dndNHI = 1.46 # Kim2001
 if LiskeDist: b_dndNHI = 1.5 # LiskeDist
 def dndNHI(NHI):
@@ -79,6 +78,7 @@ NHI_distribution = NHI_gen(name='NHI', a=NHI_left, b=NHI_right)
 # ----------- redshift distribution -----------
 
 a_dndz = 9.06
+a_dndz = 8.919350686224782 # to have dndz(2)=100
 b_dndz = 2.19 # Kim2001
 if LiskeDist: b_dndz = 2.2 # LiskeDist
 z_left = 2. # left bound to integrate dndz
@@ -128,10 +128,9 @@ def nlines(z_qso, zleft=z_left, NHIleft=NHI_left, NHIright=NHI_right):
 	left = max(zleft, z_lyb(z_qso))
 	nl = int_dndz(left, z_qso)
 	# convert nlines in 13.64 < log10(NHI) < 16 to designated NHI range
-	#NHI_norm_factor = int_dndNHI(NHIleft, NHIright) / int_dndNHI(10.**13.64, 1e16) 
-	#nl = nl * NHI_norm_factor
-	#nl = np.random.poisson(nl)
-	nl = 1
+	NHI_norm_factor = int_dndNHI(NHIleft, NHIright) / int_dndNHI(10.**13.64, 1e16) 
+	nl = nl * NHI_norm_factor
+	nl = np.random.poisson(nl)
 	return int(round(nl))
 
 # ----------- combined distribution -----------
@@ -231,7 +230,7 @@ def voigt1d(lam0, lgNHI, b, gamma=gamma_lya):
 def multivoigt_parray(parray, lam, v1d=voigt1d, verbose=False):
 	'''
 	Compute multivoigt from an parameter array
-	Inputs: parray - [nparas, nlines]
+	Inputs: parray - size:[nparas, nlines]
 	'''
 	tau = np.zeros(len(lam))
 	if verbose: print('%d lines'%len(parray.T))
@@ -281,6 +280,62 @@ def parray2flux_dz(parray, lam, shiftmode, dz, zqso, continuum=1., voigt_is_tau=
 		if tosave: pkdump(flux, tosave)
 	return flux
 
+def lam_grid(lam_left, lam_right, fix, res=2e4, res_ele=4., dlam_fixresele=0.0125, return_nlam=False, tosave=None):
+	'''
+	if fix=='res', use res
+	if fix=='resele', use res_ele, dlam_fixresele
+	res_ele - default 4 (Liske2008), resolution element size in pixel
+	dlam_fixresele - AA per pixel, useful only if fix=='resele'
+	return_nlam - only return nlam?
+	'''
+	if fix == 'res':
+		# dlam = 1e3 / 2. / res # for 2 pix / resolution element at 1000 AA
+		dlam = 5e3 / res_ele / res # for 4 pix / resolution element at 5000 AA (Liske2008)
+	elif fix == 'resele':
+		dlam = dlam_fixresele
+	else: raise Exception("argument 'fix' should be either 'res' or 'resele'")
+	# lam points
+	if os.path.exists(tosave):
+		lam = pkload(tosave)
+		if return_nlam: return np.size(lam)
+	else:
+		nlam = int(round((lam_right - lam_left) / dlam))
+		if return_nlam: return nlam
+		lam = np.linspace(lam_left, lam_right, nlam)
+		pkdump(lam, tosave)
+	if fix == 'res': res_ele = np.mean(lam / dlam / res) # in pixels
+	elif fix == 'resele': res = lam / dlam / res_ele # no unit
+	return lam, res_ele
+
+def bNHIz_generator(zqso, blgNHIz_file, z_left=z_left, NHI_left=NHI_left, NHI_right=NHI_right, rest_frame=True, LiskeDist=LiskeDist):
+	# --- get b, NHI and z parameters for each line ---
+	if os.path.exists(blgNHIz_file) and __name__!='__main__': # load previously saved parameters
+		bs, lgNHIs, zs = pkload(blgNHIz_file, verbose=False)
+	else:
+		z_left = max(z_left, z_lyb(zqso)) # spectra left bound in z
+		# number of lines
+		nl = nlines(zqso)
+		# generate bs
+		bs = b_distribution.rvs(size=nl) # generated line width bs
+		if LiskeDist: 
+			bs = []
+			while len(bs)<nl:
+				newb = np.random.normal(30., 8.)
+				if 15. < newb and newb < 100.: bs.append(newb)
+			bs = np.array(bs)
+		# generate NHIs
+		NHIs = NHI_distribution.rvs(size=nl, left=NHI_left, right=NHI_right)
+		lgNHIs = np.log10(NHIs)
+		# generate lam0s
+		z_distribution = z_gen(name='z', a=z_left, b=zqso)
+		zs = z_distribution.rvs(size=nl, zleft=z_left, z_qso=zqso)
+		pkdump((bs, lgNHIs, zs), blgNHIz_file)
+	if rest_frame: lam0s = lya_wave * (1. + zs) / (1. + zqso)
+	else: lam0s = lya_wave * (1. + zs)
+	# form parray
+	parray = np.array([lam0s, lgNHIs, bs])
+	return parray
+
 def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True, shiftmode='dz', ispec=None, verbose=True):
 	'''
 	zqso - redshift of quassar
@@ -302,19 +357,13 @@ def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True,
 	ispectxt = '_spec%d'%ispec if ispec != None else ''
 	liskedisttxt = '_LiskeDist' if LiskeDist else ''
 	suffix = ispectxt + liskedisttxt
-	if fix == 'res':
-		# dlam = 1e3 / 2. / res # for 2 pix / resolution element at 1000 AA
-		dlam = 5e3 / 4. / res # for 4 pix / resolution element at 5000 AA (Liske2008)
-	elif fix == 'resele':
-		res_ele = 4. # resolution element size in pixel
-	else: raise Exception("argument 'fix' should be either 'res' or 'resele'")
 
 	spec_file = path + 'data/gen_spec/gen_spec%s_zqso%.1f%s_%s%.3e%s.pickle'%(restframetxt,zqso,restxt,shiftmode,dz,suffix)
 	if os.path.exists(spec_file):# and __name__!='__main__': # load previously saved spectra, all not added noise
 		lam, flux = pkload(spec_file, verbose=verbose)
 	else:
-		left = max(z_left, z_lyb(zqso)) # spectra left bound in z
 		# wavelength range
+		left = max(z_left, z_lyb(zqso)) # spectra left bound in z
 		if rest_frame:
 			lam_left = lya_wave * (1. + left) / (1. + zqso)
 			lam_right = lya_wave
@@ -322,37 +371,11 @@ def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True,
 			lam_left = lya_wave * (1. + left)
 			lam_right = lya_wave * (1. + zqso)
 		# lam points
-		nlam = int(round((lam_right - lam_left) / dlam))
-		lam = np.linspace(lam_left, lam_right, nlam)
-		if fix == 'res': res_ele = np.mean(lam / dlam / res) # in pixels
-		elif fix == 'resele': res = lam / dlam / res_ele # no unit
+		lam, res_ele = lam_grid(lam_left, lam_right, fix, res=res, dlam_fixresele=dlam)
 		# line parameter file
-		blgNHIz_file = path + 'paras/blgNHIz_zqso%.1f%s%s.pickle'%(zqso,ispectxt,liskedisttxt)
+		blgNHIz_file = path + 'paras/blgNHIz_zqso%.1f%s.pickle'%(zqso,suffix)
 		# --- get b, NHI and z parameters for each line ---
-		if os.path.exists(blgNHIz_file) and __name__!='__main__': # load previously saved parameters
-			bs, lgNHIs, zs = pkload(blgNHIz_file, verbose=False)
-		else:
-			# number of lines
-			nl = nlines(zqso)
-			# generate bs
-			bs = b_distribution.rvs(size=nl) # generated line width bs
-			if LiskeDist: 
-				bs = []
-				while len(bs)<nl:
-					newb = np.random.normal(30., 8.)
-					if 15. < newb and newb < 100.: bs.append(newb)
-				bs = np.array(bs)
-			# generate NHIs
-			NHIs = NHI_distribution.rvs(size=nl, left=NHI_left, right=NHI_right)
-			lgNHIs = np.log10(NHIs)
-			# generate lam0s
-			z_distribution = z_gen(name='z', a=left, b=zqso)
-			zs = z_distribution.rvs(size=nl, zleft=left, z_qso=zqso)
-			pkdump((bs, lgNHIs, zs), blgNHIz_file)
-		if rest_frame: lam0s = lya_wave * (1. + zs) / (1. + zqso)
-		else: lam0s = lya_wave * (1. + zs)
-		# form parray
-		parray = np.array([lam0s, lgNHIs, bs])
+		parray = bNHIz_generator(zqso, blgNHIz_file, rest_frame=rest_frame)
 		# --- form spectrum from parameters ---
 		flux = parray2flux_dz(parray, lam, shiftmode, dz, zqso, voigt_is_tau=True, v1d=voigt1d)
 		# convolve with resolution element

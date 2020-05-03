@@ -15,6 +15,7 @@ def getspec(dz, z_genspec=None, ispec=None):
 	import sse_lya_sims_zlines_27jun2019_steve as sse
 	if z_genspec != None: lam, flux = generate_spec(z_genspec, res=2e4, dlam=0.0125, fix='resele', dz=dz, rest_frame=False, shiftmode='dz', ispec=ispec, verbose=True)
 	else: flux, lam = sse.mk_qso_spec3_dz(sse.z,dz,refparams=np.zeros([4,0]),res=2e4,addline=0,divide=1.,mode='dz')
+	print('lambda: ', np.min(lam), np.max(lam))
 	return lam, flux
 
 def spec_two_epoch(nphot, z_genspec=None, period=10., addnoise=2, cosmo=liske_cosmo, ispec=None):
@@ -104,12 +105,12 @@ def sigma_liske_empir(zqso, snr=1.3e4, nqso=1):
 
 if __name__ == '__main__':
 	from sse import dvfits2sigma
-	z_genspec = 3. # if ==None then use keck line list
+	z_genspec = None # if ==None then use keck line list
 	time = 10. # year
 	nphot = 1.69e8
 	ispec = None
 	ntrial = 100
-	sigma_mode = 'compute' # 'estimate' to estimate from dvfits array or 'compute' to compute from Liske equation
+	sigma_mode = 'estimate' # 'estimate' to estimate from dvfits array or 'compute' to compute from Liske equation
 
 	zqsos = np.array([2., 2.5, 3., 3.5, 4.])
 	liskepaper_sigma = sigma_liske_empir(zqsos)
@@ -131,7 +132,7 @@ if __name__ == '__main__':
 		elif sigma_mode=='estimate': # compute sigma from equation in Liske2008
 			dvfits = liske_dvfits(ntrial, nphot, z_genspec, period=time, ispec=ispec)
 			sigma = dvfits2sigma(dvfits, relaerr_all=None, relaerr_thrshld=1., dvstd_thrshld=np.inf, bs_time=1)
-		print('z: %.1f ispec: %s sigma: %.4f cm/s'%(z_genspec, ispec, sigma))
+		print('z: %.1f ispec: %s sigma: %.4f cm/s'%(zqso, ispec, sigma))
 		sigmas.append(sigma)
 	sig2zqso.append(np.mean(sigmas))
 	sig2zqso_err.append(np.std(sigmas,ddof=1)) # unbiased std

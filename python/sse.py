@@ -9,37 +9,90 @@ from utils import *
 from cosmology import dz2dv
 import generate_spec as gs
 import voigtforest as vf
-from continuum_fit import norm_spec
+from continuum_fit import get_keck_spec
+from read_koa import smoothwidth,get_res
+import read_koa as rk
 
-def keck_template(ind, shiftmode, dz, zqso, fitcont_dist, fitcont_deg, fitcont_mode, vfaddline):
+def keck_intrinsic_lw(parray, R_keck, smoothwidth=None, dlam=None):
+	'''
+	return intrinsic line width adjusting for fitting smooth and R_keck
+	smoothwidth - (pixel) =2sigma for gaussian, if None, no smooth
+	dlam - (AA/pixel) for keck observed lam grid, only used if smoothwidth!=None
+	'''
+	lam0 = parray[0]
+	paras = parray[2:] # line width parameters to be adjusted, shape: (npara, npoints)
+	fwhm_keck = lam0 / R_keck
+	if smoothwidth!=None:
+		fwhm_smooth = smoothwidth/2.*2.355 * dlam #AA
+		fwhm_toadj = np.sqrt(fwhm_smooth**2. + fwhm_keck**2.)
+	else: fwhm_toadj = fwhm_keck
+	least_fv_intrin = 0./3e5*lam0 # make intrinsic fwhm to be at least 5 km/s
+	if len(paras)==2: fv_obs = vf.fv(*paras) # should paras == [fl, fg]
+	elif len(paras)==1: fv_obs = paras[0] # paras == [b]
+	fv_intrin_square = fv_obs**2. - fwhm_toadj**2.
+	fv_intrin = np.array([least_fv_intrin[i] if fv_intrin_square[i]<least_fv_intrin[i]**2.\
+	                      else np.sqrt(fv_intrin_square[i]) for i in range(len(fv_obs))])
+	if len(paras)==2:
+		factor = fwhm_intrin / fv_obs
+		paras_adj = paras * factor
+	elif len(paras)==1: paras_adj = fv_intrin
+	parray[2:] = paras_adj
+	return parray
+
+def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, vfaddline, CSL_cut, fix, res_fixres=2e4, dlam_fixresele=0.0125, smooth=True, verbose=True):
 	'''
 	modified mk_qso_spec3_dz
 	from keck data to template
+	smooth - whether smooth during read_koa
 	'''
-	templam_file = ''
-	tempflux_file = ''
-	if os.path.exists(templam_file): # assuming tempflux_file exists too
-		lam = pkload(templam_file)
-		flux_temp = pkload(tempflux_file)
+	saveid = saveid_func(ind)
+	fitconttxt = '_dist%d'%fitcont_dist + ('_deg%d'%fitcont_deg if fitcont_mode=='poly' else '_cont%s'%fitcont_mode)
+	restxt = '_dlam%.3e'%dlam_fixresele if fix=='resele' else '_R%.1e'%res_fixres if fix == 'res' else ''
+	smoothtxt = '_smooth%dpix'%rk.smoothwidth if smooth else '_nosmooth'
+	vfaddlinetxt = '_fitaddline' if vfaddline else ''
+	csltxt = '_CSLcut%.1f'%CSL_cut
+
+	templam_file = path + 'data/keck_gen_spec/keck_lam_%s.pickle'%(saveid + restxt)
+	tempflux_file = path + 'data/keck_gen_spec/keck_flux_%s_%s%.3e.pickle'%(saveid + fitconttxt + restxt + smoothtxt, shiftmode, dz)
+	if os.path.exists(tempflux_file): # assuming templam_file exists too
+		lam = pkload(templam_file, verbose=verbose)
+		flux_temp = pkload(tempflux_file, verbose=verbose)
 	else:
 		# get keck data and fit continuum
-		klam, kflux, knoise = norm_spec(ind, fitcont_dist, fitcont_deg, fitcont_mode, plot_rest_frame=False) # form spec in observed frame
+		klam, kflux, knoise = get_keck_spec(ind, fitcont_dist, fitcont_deg, fitcont_mode, plot_rest_frame=False, smooth=smooth) # form spec in observed frame
 
-		# set lam grid (not from data)
+		# set lam grid (not from data), including save lam
+		lam, res_ele = gs.lam_grid(np.min(klam), np.max(klam), fix, res=res_fixres, dlam_fixresele=dlam_fixresele, tosave=templam_file)
 
 		# fit voigtforest
-		keckvf_file = ''
+		keckvf_file = path + 'paras/voigtforest_bestp_%s.pzip'%(saveid + smoothtxt + fitconttxt + vfaddlinetxt + csltxt) # assume vf.para_set=='fLfG'
 		vfresults = vf.fit_forest(klam, kflux, knoise, tosave=keckvf_file, addline=vfaddline, CSLcut=CSL_cut)
 		vfparray = vf.results2parray(vfresults)
 
 		# adjust parameters by Keck resolution, smooth resolution
+		smoothwidth = rk.smoothwidth if smooth else None
+		vfparray = keck_intrinsic_lw(vfparray, R_keck=rk.get_res(matched['KOAjobID'][ind]), smoothwidth=smoothwidth, dlam=np.diff(klam).mean())
 
 		# parray2flux, with tosave (save flux)
-		flux_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dz, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=tempflux_file)
-		# save lam
+		flux_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dz, matched['z'][ind], voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
+
+		# convolve with resolution element
+		flux_temp = rk.flux_smooth(flux_temp, res_ele)
+		
+		# save flux
+		pkdump(flux_temp, tempflux_file, verbose=True)
 
 	return lam, flux_temp
 
+def get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dz, genspec_args, keck_args, verbose=True):
+	if linelistmode == 'genspec':
+		lam, flux_temp = gs.generate_spec(genspec_args.zqso, res=res_fixres, dlam=dlam_fixresele, fix=fixres, dz=dz, rest_frame=False,\
+		                 shiftmode=shiftmode, ispec=genspec_args.ispec, verbose=verbose)
+	elif linelistmode == 'keck':
+		lam, flux_temp = keck_template(keck_args.ind, shiftmode, dz, keck_args.fitcont_dist, keck_args.fitcont_deg, keck_args.fitcont_mode,\
+		                 keck_args.vfaddline, keck_args.CSL_cut, fixres, res_fixres, dlam_fixresele, smooth=keck_args.smooth, verbose=verbose)
+	return lam, flux_temp
+	
 def zero_runs(a): # from https://stackoverflow.com/questions/24885092/finding-the-consecutive-zeros-in-a-numpy-array
 	'''
 	returns n*2 array with chunck bound indexs
@@ -168,11 +221,17 @@ if __name__ == '__main__':
 	# ---------- set up parameters ----------
 	linelistmode = 'genspec' # 'genspec' or 'keck'
 	### applying for differnt linelistmodes
-	if linelistmode == 'genspec':
+	class genspec_args:
 		zqso = 3.
 		ispec = None
-	elif linelistmode == 'keck':
+	class keck_args:
 		ind = 7 # index on keck quasar list
+		fitcont_dist = 100
+		fitcont_deg = 10
+		fitcont_mode = 'poly' # poly, linear or cubic
+		vfaddline = False # voigtforest for keck data
+		CSL_cut = 1.5 # voigtforest for keck data
+		smooth = True # whether smooth during read_koa
 	
 	### applying to all linelistmodes
 	fixres = 'resele' # 'res' or 'resele', whether to fix R or resolution element size (vs lam)
@@ -180,11 +239,13 @@ if __name__ == '__main__':
 	res_fixres = 2e4 # R, useful only if fexres=='res'
 	nphot2 = 1.69e8 # npoht for epoch 2 for add_shot_noise
 	nphot1 = 1**2. * nphot2 # nphot for epoch 1 for add_shot_noise
-	CSL_cut = 1.5 # for region detection in voigt fitting, default 1.5
 	ntemplate = 1 # number of templates to generate; if 1: only template 0 from line list, if 2: another template from voigtfit to epoch 1 spectra
 	ntrial = 100
 	chunk_flux_threshold = 'vfregchk' # 'gradchk' for chunking by gradient, 'vfregchk' for chunking by voigtforest regions, 0.8, 0.975
+	###### voigtforest fitting for epoch 1 spec
+	CSL_cut = 1.5 # for region detection in voigt fitting, default 1.5
 	vfaddline = True # whether to try add lines when fitting voigtforest
+	###### shift parameters for epoch 2 and test spectra
 	shiftmode = 'dv' # 'dz' / 'dv' / 'dl' (+ 'lw' for adjusting line width too)
 	if 'dz' in shiftmode:
 		real_dx = 0. # real dz for the second epoch
@@ -207,12 +268,13 @@ if __name__ == '__main__':
 	dxmax = real_dx + testrange + delta_dx # add delta_dx for range setup
 	dxtests = np.arange(dxmin, dxmax, delta_dx)
 	if linelistmode == 'genspec':
-		runid = 'zqso%.1f'%zqso
-		runid += '_spec%d'%ispec if ispec != None else '' # ispectxt
+		runid = 'zqso%.1f'%genspec_args.zqso
+		runid += '_spec%d'%genspec_args.ispec if genspec_args.ispec != None else '' # ispectxt
 		runid += '_LiskeDist' if gs.LiskeDist else '' # liskedisttxt
+		zqso = genspec_args.zqso
 	elif linelistmode == 'keck':
-		zqso = matched['z'][ind]
-		saveid = saveid_func(ind)
+		zqso = matched['z'][keck_args.ind]
+		saveid = saveid_func(keck_args.ind)
 		runid = saveid
 	if ntemplate==1 and chunk_flux_threshold=='vfregchk':
 		print("Cannot do vfregchk: not generating 2nd template.\n    Switching to gradchk.")
@@ -235,7 +297,6 @@ if __name__ == '__main__':
 	runid += '_testrange%.1ed%.1e'%(testrange, delta_dx) # testrangetxt
 	
 	# ---------- start run ----------
-	
 	# get dvfits
 	dvfits_file = path + 'paras/dvfits_%s.pickle'%(runid)
 	if os.path.exists(dvfits_file):
@@ -243,14 +304,12 @@ if __name__ == '__main__':
 	else:
 		print('Running',runid)
 		# ----- get original spectral templates for two epochs -> lam, flux1_temp, flux2_temp -----
-		if linelistmode == 'genspec':
-			# epoch 1 template
-			lam, flux1_temp = gs.generate_spec(zqso, res=res_fixres, dlam=dlam_fixresele, fix=fixres, dz=0., rest_frame=False, shiftmode=shiftmode, ispec=ispec)
-			# epoch 2 template
-			if real_dx == 0: flux2_temp = flux1_temp
-			else: _, flux2_temp = gs.generate_spec(zqso, res=res_fixres, dlam=dlam_fixresele, fix=fixres, dz=real_dx, rest_frame=False, shiftmode=shiftmode, ispec=ispec)
-		elif linelistmode == 'keck':
-			lam, flux1_temp = keck_template()
+		# epoch 1 template
+		lam, flux1_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, 0., genspec_args, keck_args)
+		# epoch 2 template
+		if real_dx == 0: flux2_temp = flux1_temp
+		else: _, flux2_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, real_dx, genspec_args, keck_args)
+		# chunk epoch 1 template
 		chk_boundinds = chunk_spec(lam, flux1_temp, minlinesize, chunk_flux_threshold) # chunk by epoch 1 template
 
 		# ----- get voigtforest parameters for 2nd template -----
@@ -286,11 +345,7 @@ if __name__ == '__main__':
 				# form 2nd template spectrum
 				testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idz])
 				if ntemplate==1: # use original template
-					if linelistmode == 'genspec':
-						_, fluxtest_temp = gs.generate_spec(zqso, res=res_fixres, dlam=dlam_fixresele,\
-						                   fix=fixres, dz=dxtests[idz], rest_frame=False, shiftmode=shiftmode, ispec=ispec, verbose=False)
-					elif linelistmode == 'keck':
-						raise Exception("need to combine keck_template()")
+					_, fluxtest_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dxtests[idz], genspec_args, keck_args, verbose=False)
 					fluxtest_temp = add_shot_noise(fluxtest_temp, nphot1)
 				elif ntemplate==2: # shift vfparray to form 2nd template spectrum
 					fluxtest_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dxtests[idz], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file)
