@@ -280,7 +280,7 @@ def parray2flux_dz(parray, lam, shiftmode, dz, zqso, continuum=1., voigt_is_tau=
 		if tosave: pkdump(flux, tosave)
 	return flux
 
-def lam_grid(lam_left, lam_right, fix, res=2e4, res_ele=4., dlam_fixresele=0.0125, return_nlam=False, tosave=None):
+def lam_grid(lam_left, lam_right, fix, res=2e4, res_ele=4., dlam_fixresele=0.0125, return_nlam=False, tosave=None, verbose=True):
 	'''
 	if fix=='res', use res
 	if fix=='resele', use res_ele, dlam_fixresele
@@ -296,7 +296,7 @@ def lam_grid(lam_left, lam_right, fix, res=2e4, res_ele=4., dlam_fixresele=0.012
 	else: raise Exception("argument 'fix' should be either 'res' or 'resele'")
 	# lam points
 	if tosave!=None and os.path.exists(tosave):
-		lam = pkload(tosave)
+		lam = pkload(tosave, verbose=verbose)
 		if return_nlam: return np.size(lam)
 	else:
 		nlam = int(round((lam_right - lam_left) / dlam))

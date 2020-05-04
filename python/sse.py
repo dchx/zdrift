@@ -65,7 +65,7 @@ def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, v
 		klam, kflux, knoise = get_keck_spec(ind, fitcont_dist, fitcont_deg, fitcont_mode, plot_rest_frame=False, smooth=smooth) # form spec in observed frame
 
 		# set lam grid (not from data), including save lam
-		lam, res_ele = gs.lam_grid(np.min(klam), np.max(klam), fix, res=res_fixres, dlam_fixresele=dlam_fixresele, tosave=templam_file)
+		lam, res_ele = gs.lam_grid(np.min(klam), np.max(klam), fix, res=res_fixres, dlam_fixresele=dlam_fixresele, tosave=templam_file, verbose=verbose)
 
 		# fit voigtforest
 		keckvf_file = path + 'paras/voigtforest_bestp_%s.pzip'%(saveid + smoothtxt + fitconttxt + vfaddlinetxt + csltxt) # assume vf.para_set=='fLfG'
