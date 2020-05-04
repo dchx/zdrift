@@ -37,7 +37,7 @@ def GaussFunction(x, amplitude, centroid, sigma):
 	"""
 	return amplitude * np.exp(-0.5 * ((x - centroid) / sigma) ** 2)
 
-def find_regions(wavelengths, fluxes, noise, continuum=1., min_region_width=2, N_sigma=4.0, extend=False, peak_dist=5, max_pixwidth=10, plot=False, tosave=None):
+def find_regions(wavelengths, fluxes, noise, continuum=1., min_region_width=2, N_sigma=4.0, extend=False, peak_dist=5, max_pixwidth=10, plot=False, tosave=None, verbose=True):
 	"""
 	Finds detection regions above some detection threshold and minimum width.
 
@@ -57,7 +57,7 @@ def find_regions(wavelengths, fluxes, noise, continuum=1., min_region_width=2, N
 	"""
 
 	if tosave and os.path.exists(tosave):
-		regions_l, regions_i, regions_ipk = pkloadgzip(tosave)
+		regions_l, regions_i, regions_ipk = pkloadgzip(tosave, verbose=verbose)
 	else:
 		num_pixels = len(wavelengths)
 		pixels = range(num_pixels)

@@ -196,7 +196,7 @@ def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut
 	max_pixwidth = np.mean(typical_pixwidths)+3*np.std(typical_pixwidths) # 3 sigma upper bound
 	region_lamlims, region_indlims, region_indpks = \
 	    vamp.find_regions(lam, flux, noise, continuum=0.99*continuum, extend=True, \
-	    peak_dist=1, N_sigma=CSLcut, max_pixwidth=max_pixwidth, plot=0, tosave=tosave_findreg) # [[lam_start, lam_end]], [[i_start, i_end]] (flux[i_start:i_end])
+	    peak_dist=1, N_sigma=CSLcut, max_pixwidth=max_pixwidth, plot=0, tosave=tosave_findreg, verbose=verbose) # [[lam_start, lam_end]], [[i_start, i_end]] (flux[i_start:i_end])
 	'''
 	if np.sum([len(ipk) for ipk in region_indpks]) < 100:
 		print('Number of lines less than 100, pass.')
