@@ -35,6 +35,9 @@ def keck_intrinsic_lw(parray, R_keck, smoothwidth=None, dlam=None):
 	if len(paras)==2:
 		factor = fv_intrin / fv_obs
 		paras_adj = paras * factor
+		# make fg not zero
+		fg_min = 1e-20
+		paras_adj[1] = np.array([pval if pval > fg_min else fg_min for pval in paras_adj[1]])
 	elif len(paras)==1: paras_adj = fv_intrin
 	parray[2:] = paras_adj
 	return parray
