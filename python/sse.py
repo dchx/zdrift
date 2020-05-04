@@ -69,7 +69,7 @@ def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, v
 
 		# fit voigtforest
 		keckvf_file = path + 'paras/voigtforest_bestp_%s.pzip'%(saveid + smoothtxt + fitconttxt + vfaddlinetxt + csltxt) # assume vf.para_set=='fLfG'
-		vfresults = vf.fit_forest(klam, kflux, knoise, tosave=keckvf_file, addline=vfaddline, CSLcut=CSL_cut)
+		vfresults = vf.fit_forest(klam, kflux, knoise, tosave=keckvf_file, addline=vfaddline, CSLcut=CSL_cut, verbose=verbose)
 		vfparray = vf.results2parray(vfresults)
 
 		# adjust parameters by Keck resolution, smooth resolution

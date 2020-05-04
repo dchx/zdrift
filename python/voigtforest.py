@@ -184,7 +184,7 @@ def results2initparray(results): return paras2parray([result.initparams for resu
 def pfile2parray(pfile): return results2parray(pkloadgzip(pfile))
 def pfile2flux(pfile, lam, continuum=1.): return gs.parray2flux(pfile2parray(pfile), lam, continuum, voigt_is_tau=voigt_is_tau, v1d=v1d)
 
-def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut=1.5, plot=False, chkind=False):
+def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut=1.5, plot=False, chkind=False, verbose=True):
 	'''
 	Spectrum should be normalized to [0,1]
 	addline - whether try to add lines after fit
@@ -212,14 +212,14 @@ def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut
 
 	# ----------- fit voigts for each region -----------
 	if tosave and os.path.exists(tosave):
-		results = pkloadgzip(tosave)
+		results = pkloadgzip(tosave, verbose=verbose)
 	else:
 		results = []
 		t1 = time.time()
 		for ireg, [start, end] in enumerate(region_indlims): # loop through each region
 			tosave_reg = tosave[:tosave.rfind('.')]+'_reg%d'%ireg+tosave[tosave.rfind('.'):]
 			if tosave and os.path.exists(tosave_reg):
-				result_reg = pkloadgzip(tosave_reg)
+				result_reg = pkloadgzip(tosave_reg, verbose=verbose)
 			else:
 				lam_reg = lam[start:end]
 				flux_reg = flux[start:end]
