@@ -36,6 +36,14 @@ def obs_frame(lam_emit, z):
 	lam_obs=lam_emit*(1.+z)
 	return lam_obs
 
+def lam2z(lam):
+	'''
+	convert a series of wavelengths (lam) in a Lya forest to redshifts of clouds on the path
+	assuming lam in observed frame
+	'''
+	zs = lam / lya_wave - 1.
+	return zs
+
 def rest_fram_pars(redsft,plot_rest_frame=True):
 	if plot_rest_frame: 
 		z_plot_rest_frame=redsft #redshift if plot in rest frame, else zero
