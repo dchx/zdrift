@@ -1,11 +1,6 @@
 from utils import *
-from cosmology import dzdt,dz2dv
+from cosmology import dzdt,dz2dv,liske_cosmo
 from generate_spec import generate_spec
-
-class liske_cosmo:
-	Om0 = 0.3
-	Ode0 = 0.7
-	H0 = 70. * u.km/u.Mpc/u.s
 
 def getspec(dz, z_genspec=None, ispec=None):
 	'''
