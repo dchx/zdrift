@@ -6,7 +6,7 @@ with the 2nd spectrum to estimate sigma
 '''
 from __future__ import print_function
 from utils import *
-from cosmology import dz2dv
+from cosmology import dz2dv,liske_cosmo
 import generate_spec as gs
 import voigtforest as vf
 from continuum_fit import get_keck_spec
@@ -42,7 +42,7 @@ def keck_intrinsic_lw(parray, R_keck, smoothwidth=None, dlam=None):
 	parray[2:] = paras_adj
 	return parray
 
-def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, vfaddline, CSL_cut, fix, res_fixres=2e4, dlam_fixresele=0.0125, smooth=True, verbose=True):
+def keck_template(ind, shiftmode, dx, fitcont_dist, fitcont_deg, fitcont_mode, vfaddline, CSL_cut, fix, res_fixres=2e4, dlam_fixresele=0.0125, smooth=True, verbose=True, cosmo=cosmology.Planck15):
 	'''
 	modified mk_qso_spec3_dz
 	from keck data to template
@@ -56,7 +56,7 @@ def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, v
 	csltxt = '_CSLcut%.1f'%CSL_cut
 
 	templam_file = path + 'data/keck_gen_spec/keck_lam_%s.pickle'%(saveid + restxt)
-	tempflux_file = path + 'data/keck_gen_spec/keck_flux_%s_%s%.3e.pickle'%(saveid + fitconttxt + restxt + smoothtxt, shiftmode, dz)
+	tempflux_file = path + 'data/keck_gen_spec/keck_flux_%s_%s%.3e.pickle'%(saveid + fitconttxt + restxt + smoothtxt, shiftmode, dx)
 	if os.path.exists(tempflux_file): # assuming templam_file exists too
 		lam = pkload(templam_file, verbose=verbose)
 		flux_temp = pkload(tempflux_file, verbose=verbose)
@@ -77,7 +77,7 @@ def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, v
 		vfparray = keck_intrinsic_lw(vfparray, R_keck=rk.get_res(matched['KOAjobID'][ind]), smoothwidth=smoothwidth, dlam=np.diff(klam).mean())
 
 		# parray2flux, with tosave (save flux)
-		flux_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dz, matched['z'][ind], voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
+		flux_temp = gs.parray2flux_shift(vfparray, lam, shiftmode, dx, matched['z'][ind], voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, cosmo=cosmo)
 
 		# convolve with resolution element
 		flux_temp = rk.flux_smooth(flux_temp, res_ele)
@@ -86,13 +86,13 @@ def keck_template(ind, shiftmode, dz, fitcont_dist, fitcont_deg, fitcont_mode, v
 		pkdump(flux_temp, tempflux_file, verbose=True)
 	return lam, flux_temp
 
-def get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dz, genspec_args, keck_args, verbose=True):
+def get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dx, genspec_args, keck_args, verbose=True, cosmo=cosmology.Planck15):
 	if linelistmode == 'genspec':
-		lam, flux_temp = gs.generate_spec(genspec_args.zqso, res=res_fixres, dlam=dlam_fixresele, fix=fixres, dz=dz, rest_frame=False,\
-		                 shiftmode=shiftmode, ispec=genspec_args.ispec, verbose=verbose)
+		lam, flux_temp = gs.generate_spec(genspec_args.zqso, res=res_fixres, dlam=dlam_fixresele, fix=fixres, dx=dx, rest_frame=False,\
+		                 shiftmode=shiftmode, ispec=genspec_args.ispec, verbose=verbose, cosmo=cosmo)
 	elif linelistmode == 'keck':
-		lam, flux_temp = keck_template(keck_args.ind, shiftmode, dz, keck_args.fitcont_dist, keck_args.fitcont_deg, keck_args.fitcont_mode,\
-		                 keck_args.vfaddline, keck_args.CSL_cut, fixres, res_fixres, dlam_fixresele, smooth=keck_args.smooth, verbose=verbose)
+		lam, flux_temp = keck_template(keck_args.ind, shiftmode, dx, keck_args.fitcont_dist, keck_args.fitcont_deg, keck_args.fitcont_mode,\
+		                 keck_args.vfaddline, keck_args.CSL_cut, fixres, res_fixres, dlam_fixresele, smooth=keck_args.smooth, verbose=verbose, cosmo=cosmo)
 	return lam, flux_temp
 	
 def zero_runs(a): # from https://stackoverflow.com/questions/24885092/finding-the-consecutive-zeros-in-a-numpy-array
@@ -257,8 +257,13 @@ if __name__ == '__main__':
 		real_dx = 21.3 # (cm/s) real dv for the second epoch
 		delta_dx = 0.4  # 0.2 0.4 (cm/s) dv testing step
 		testrange = 390. # 40 200 (cm/s) determines the dv test range [real_dx +/- test_range]
+	elif 'dt' in shiftmode:
+		real_dx = 0 # (cm/s)
+		delta_dx = 0.4
+		testrange = 390.
 	###### settings not shown in runid
 	minlinesize = 3 # pixel, min size for each chunk
+	cosmo = liske_cosmo
 	######### dvfits to sigma parameters
 	relaerr_thrshld = 0.75 #0.75
 	dvstd_thrshld = +np.inf # (cm/s)
@@ -307,10 +312,10 @@ if __name__ == '__main__':
 		print('Running',runid)
 		# ----- get original spectral templates for two epochs -> lam, flux1_temp, flux2_temp -----
 		# epoch 1 template
-		lam, flux1_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, 0., genspec_args, keck_args)
+		lam, flux1_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, 0., genspec_args, keck_args, cosmo=cosmo)
 		# epoch 2 template
 		if real_dx == 0: flux2_temp = flux1_temp
-		else: _, flux2_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, real_dx, genspec_args, keck_args)
+		else: _, flux2_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, real_dx, genspec_args, keck_args, cosmo=cosmo)
 		# chunk epoch 1 template
 		chk_boundinds = chunk_spec(lam, flux1_temp, minlinesize, chunk_flux_threshold) # chunk by epoch 1 template
 
@@ -333,39 +338,40 @@ if __name__ == '__main__':
 				plt.plot(lam, fluxtest_temp, 'r', lw=0.5) # plot voigtfit of epoch 1 spectrum
 				plt.show()
 
-		# ----- do correlation, find best dz -----
+		# ----- do correlation, find best dx -----
 		dvfits = np.zeros([len(chk_boundinds),ntrial]) # the best fit redshift for each of 100 trials for each chunk
 		t0 = time.time()
 		ntrial = 100
+		if 'dt' in shiftmode: shiftmode = shiftmode.replace('dt', 'dv') # test in dv range
 		for i in range(ntrial): # try 100 times
 			t1 = time.time()
 			# add noise to epoch 2 original template
 			flux2 = add_shot_noise(flux2_temp, nphot2, return_error=False)
-			# test different dz
+			# test different dx
 			corrs = np.zeros([len(chk_boundinds),len(dxtests)])
-			for idz in range(len(dxtests)): # try each test dz
+			for idx in range(len(dxtests)): # try each test dx
 				# form 2nd template spectrum
-				testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idz])
 				if ntemplate==1: # use original template
-					_, fluxtest_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dxtests[idz], genspec_args, keck_args, verbose=False)
+					_, fluxtest_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dxtests[idx], genspec_args, keck_args, verbose=False, cosmo=cosmo)
 					fluxtest_temp = add_shot_noise(fluxtest_temp, nphot1)
 				elif ntemplate==2: # shift vfparray to form 2nd template spectrum
-					fluxtest_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dxtests[idz], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file)
+					testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idx])
+					fluxtest_temp = gs.parray2flux_shift(vfparray, lam, shiftmode, dxtests[idx], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
 		
 				# correlation between 2nd template spectrum (fluxtest_temp) and epoch 2 spectrum (flux2)
 				for ichk in range(len(chk_boundinds)): # loop through chunks
 					il = chk_boundinds[ichk, 0]
 					ir = chk_boundinds[ichk, 1]
-					corrs[ichk, idz] = np.corrcoef(fluxtest_temp[il:ir], flux2[il:ir])[0,1]
+					corrs[ichk, idx] = np.corrcoef(fluxtest_temp[il:ir], flux2[il:ir])[0,1]
 			# testing
 			#print('%d chunks'%len(chk_boundinds))
 			#for ichk in range(len(chk_boundinds)):
 			#	dxfitind = np.argmax(corrs[ichk,:])
 			#	dxfit = dxtests[dxfitind]
 			#	testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxfit)
-			#	fluxfit = gs.parray2flux_dz(vfparray, lam, shiftmode, dxfit, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file)
+			#	fluxfit = gs.parray2flux_shift(vfparray, lam, shiftmode, dxfit, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
 			#	testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, real_dx)
-			#	fluxreal = gs.parray2flux_dz(vfparray, lam, shiftmode, real_dx, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file)
+			#	fluxreal = gs.parray2flux_shift(vfparray, lam, shiftmode, real_dx, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
 			#	il = chk_boundinds[ichk, 0]
 			#	ir = chk_boundinds[ichk, 1]
 			#	diffreal = (flux2[il:ir] - fluxreal[il:ir])
@@ -380,9 +386,9 @@ if __name__ == '__main__':
 			#	plt.plot(lam[il:ir], diffreal, 'k-x', lw=0.5)
 			#	plt.plot(lam[il:ir], difffit, 'r--+', lw=0.5)
 			#	'''
-			#	for idz in range(len(dxtests)):
-			#		testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idz])
-			#		fluxtest_temp = gs.parray2flux_dz(vfparray, lam, shiftmode, dxtests[idz], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file)
+			#	for idx in range(len(dxtests)):
+			#		testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idx])
+			#		fluxtest_temp = gs.parray2flux_shift(vfparray, lam, shiftmode, dxtests[idx], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
 			#		plt.plot(lam[il:ir], fluxtest_temp[il:ir], 'r--', lw=0.5)
 			#	plt.plot(lam[il:ir], flux2[il:ir], 'k-', lw=0.5)
 			#	#plt.plot(lam[il:ir], fluxreal[il:ir], 'r--+', lw=0.5)
@@ -396,8 +402,9 @@ if __name__ == '__main__':
 			#	plt.title('ichk:%d dxfit: %.3f'%(ichk,dxtests[np.argmax(corrs[ichk,:])]))
 			#	plt.show()
 			# ^testing
-			dvfits[:, i] = dxtests[np.argmax(corrs, axis=1)] # size:nchk, dz with max corrs for each chunk
-			if 'dz' in shiftmode: dvfits[:, i] = dz2dv(dvfits[:, i], zqso)
+			dxfits = dxtests[np.argmax(corrs, axis=1)] # size:nchk, dx with max corrs for each chunk
+			if 'dz' in shiftmode: dvfits[:, i] = dz2dv(dxfits, zqso)
+			elif 'dv' in shiftmode: dvfits[:, i] = dxfits
 			print('Trial %02d, cost %.2f min, total %.2f min, dvfit median: %.2f cm/s'%(i, (time.time()-t1)/60., (time.time()-t0)/60., np.median(dvfits[:, i])))
 		# save dvfits
 		pkdump(dvfits, dvfits_file)

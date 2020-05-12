@@ -8,7 +8,7 @@ def getspec(dz, z_genspec=None, ispec=None):
 	ispec: index of spectra, used in generate_spec
 	'''
 	import sse_lya_sims_zlines_27jun2019_steve as sse
-	if z_genspec != None: lam, flux = generate_spec(z_genspec, res=2e4, dlam=0.0125, fix='resele', dz=dz, rest_frame=False, shiftmode='dz', ispec=ispec, verbose=True)
+	if z_genspec != None: lam, flux = generate_spec(z_genspec, res=2e4, dlam=0.0125, fix='resele', dx=dz, rest_frame=False, shiftmode='dz', ispec=ispec, verbose=True)
 	else: flux, lam = sse.mk_qso_spec3_dz(sse.z,dz,refparams=np.zeros([4,0]),res=2e4,addline=0,divide=1.,mode='dz')
 	return lam, flux
 

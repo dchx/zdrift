@@ -182,7 +182,7 @@ def multivoigt_dz(param_files, lam, zqso, dz, res, divide=8., mode='dz'):
 	if res<R_int: lam_tovoigt = np.linspace(lamrange[0], lamrange[1], n_int)
 	else: lam_tovoigt = lam
 	parray = get_params_dist(param_files, res=res, divide=divide) # lam0, AL, fL, fG
-	multivoigt = gs.parray2flux_dz(parray, lam_tovoigt, mode, dz, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
+	multivoigt = gs.parray2flux_shift(parray, lam_tovoigt, mode, dz, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
 	if res<R_int: multivoigt = inte_spec(lam_tovoigt, multivoigt, lam)
 	return multivoigt
 
@@ -191,7 +191,7 @@ def singlevoigt_dz(lam0, AL, fL, fG, lam, zqso, dz, mode='dz'):
 	if nlam<n_int: lam_tovoigt = np.linspace(lamrange[0], lamrange[1], n_int) # corresponding to R=2e4
 	else: lam_tovoigt = lam
 	parray = np.array([[lam0], [AL], [fL], [fG]])
-	multivoigt = gs.parray2flux_dz(parray, lam_tovoigt, mode, dz, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
+	multivoigt = gs.parray2flux_shift(parray, lam_tovoigt, mode, dz, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d)
 	if nlam<n_int: multivoigt = inte_spec(lam_tovoigt, multivoigt, lam)
 	return multivoigt
 
@@ -206,7 +206,7 @@ def find_zshift_lines(res, flux_obs, refparams, zmin, zmax, delta_dz, chk_boundi
 	
 	for i in range(len(ztest)): # loop through all test dz
 		if use_genspec:
-			lam, ftest = gs.generate_spec(zqso, res=res, dz=ztest[i], rest_frame=restframe_genspec, shiftmode=mode, fix=fix, dlam=dlam, ispec=ispec)
+			lam, ftest = gs.generate_spec(zqso, res=res, dx=ztest[i], rest_frame=restframe_genspec, shiftmode=mode, fix=fix, dlam=dlam, ispec=ispec)
 		else:
 			ftest, lam = mk_qso_spec3_dz(zqso,ztest[i],refparams,res,addline=addline,divide=divide,mode=mode)
 		# ftest = add_shot_noise(ftest,nphot) # for bothNoise

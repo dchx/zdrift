@@ -9,7 +9,7 @@ smoothwidth=2 # (pixel) =2sigma for gaussian
 def flux_smooth(flux,width):
 	# smooth flux with 2-sigma width (in pixels)
 	w = np.ones(int(round(width))) # flat kernel
-	w = gaussian(width*4., width/2.) # 4-sigma range
+	w = gaussian(int(round(width*4.)), width/2.) # 4-sigma range
 	return np.convolve(w/w.sum(),flux,mode='same')
 
 def lamflux_from_table(table,z_plot_rest_frame=0.,lya_tocut=None,smooth=True):

@@ -6,6 +6,7 @@ from utils import *
 from scipy.stats import rv_continuous
 from scipy import integrate,special
 from read_koa import flux_smooth
+from cosmology import dxs_2nd_epoch
 LiskeDist = 1
 
 # ----------- b distribution -----------
@@ -255,21 +256,23 @@ def parray2flux(parray, lam, continuum=1., voigt_is_tau=True, v1d=voigt1d, tosav
 		flux = form_spec(continuum, tau, voigt_is_tau=voigt_is_tau)
 		if tosave: pkdump(flux, tosave)
 	return flux
-def parray2flux_dz(parray, lam, shiftmode, dz, zqso, continuum=1., voigt_is_tau=True, v1d=voigt1d, tosave=None):
+def parray2flux_shift(parray, lam, shiftmode, dx, zqso, continuum=1., voigt_is_tau=True, v1d=voigt1d, tosave=None, cosmo=cosmology.Planck15):
 	'''
 	parray - shape:(nparas, nlines) [lam0, lgNHI, b] (for v1d=voigt1d) or [lam0, AL, fL, fG] (for v1d=Voigt1D)
-	dz - redshift drift
+	shiftmode - 'dz'/'dv'(+'lw') or 'dl'
+	dx - redshift drift, scalar or size:nlines
 	'''
 	if tosave and os.path.exists(tosave):
 		flux = pkload(tosave, verbose=False)
 	else:
 		# shift lam0s for dl
-		if 'dl' in shiftmode: parray[0] += dz
+		if 'dl' in shiftmode: parray[0] += dx
 		else: # dz or dv
 			# shift lam0s
-			if 'dz' in shiftmode: factor = 1. + dz / (1. + zqso)
-			elif 'dv' in shiftmode: factor = 1. + dz / c.c.to('cm/s').value
-			else: raise ValueError("shiftmode should be dz, dl ov dv, not %s."%mode)
+			if 'dt' in shiftmode: dx = dxs_2nd_epoch(parray[0], period=dx, shiftmode='dv', cosmo=cosmo) # convert to dv
+			if 'dz' in shiftmode: factor = 1. + dx / (1. + zqso)
+			elif ('dv' in shiftmode) or ('dt' in shiftmode): factor = 1. + dx / c.c.to('cm/s').value
+			else: raise ValueError("shiftmode should be dt, dz, dl or dv, not %s."%mode)
 			parray[0] *= factor
 			# shift line widths
 			if 'lw' in shiftmode:
@@ -336,18 +339,19 @@ def bNHIz_generator(zqso, blgNHIz_file, z_left=z_left, NHI_left=NHI_left, NHI_ri
 	parray = np.array([lam0s, lgNHIs, bs])
 	return parray
 
-def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True, shiftmode='dz', ispec=None, verbose=True):
+def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dx=0., rest_frame=True, shiftmode='dz', ispec=None, verbose=True, cosmo=cosmology.Planck15):
 	'''
 	zqso - redshift of quassar
 	res - spectral resolution, used if fix=='res'
 	dlam - AA per pixel, 0.0125 for Liske2008, used if fix=='resele'
 	fix - 'res' or 'resele'
-	dz - shift in z or lam
+	dx - shift in z, v or lam, or in time (year)
 	fix - if 'res', fix resolution and use different resolution element sizes at different lams;
 	      if 'resele', fix resolution element size and use different resolution R values at different lams;
 	rest_frame - whether to generate spectra in rest frame (or in observed frame)
-	shiftmode - 'dz' if dz is shift in z, 'dl' if dz is shift in lambda
+	shiftmode - 'dt'/'dz'/'dv'(+'lw') or 'dl'. 'dz' if dx is shift in z, 'dl' if dx is shift in lambda
 	ispec - index of spectra, if want to generate multiple spectra with same parameters
+	cosmo - only used if shiftmode=='dt'
 	
 	Returns
 	lam, flux - spectral template, not added noise
@@ -358,7 +362,7 @@ def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True,
 	liskedisttxt = '_LiskeDist' if LiskeDist else ''
 	suffix = ispectxt + liskedisttxt
 
-	spec_file = path + 'data/gen_spec/gen_spec%s_zqso%.1f%s_%s%.3e%s.pickle'%(restframetxt,zqso,restxt,shiftmode,dz,suffix)
+	spec_file = path + 'data/gen_spec/gen_spec%s_zqso%.1f%s_%s%.3e%s.pickle'%(restframetxt,zqso,restxt,shiftmode,dx,suffix)
 	if os.path.exists(spec_file):# and __name__!='__main__': # load previously saved spectra, all not added noise
 		lam, flux = pkload(spec_file, verbose=verbose)
 	else:
@@ -377,9 +381,9 @@ def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dz=0., rest_frame=True,
 		# --- get b, NHI and z parameters for each line ---
 		parray = bNHIz_generator(zqso, blgNHIz_file, rest_frame=rest_frame)
 		# --- form spectrum from parameters ---
-		flux = parray2flux_dz(parray, lam, shiftmode, dz, zqso, voigt_is_tau=True, v1d=voigt1d)
+		flux = parray2flux_shift(parray, lam, shiftmode, dx, zqso, voigt_is_tau=True, v1d=voigt1d, cosmo=cosmo)
 		# convolve with resolution element
-		flux = flux_smooth(flux, res_ele)
+		flux = flux_smooth(flux, int(res_ele))
 		# save spectra
 		pkdump((lam, flux), spec_file)
 	return lam, flux
