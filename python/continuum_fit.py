@@ -2,14 +2,15 @@ from utils import *
 from scipy import interpolate
 from read_koa import cut_wave_by_snr,read_koa_jobid,flux_smooth
 
-def trim_koaspec(i, stackchan=0, plot_rest_frame=True, plot_lya_forest=True, smooth=True):
+def trim_koaspec(koajobid, stackchan=0, plot_rest_frame=True, plot_lya_forest=True, smooth=True):
 	'''
-	input i, output [lam, flux, flux_err, disp, exptime, arclamp] connected
+	input koajobid, output [lam, flux, flux_err, disp, exptime, arclamp] connected
 	'''
-	z_plot_rest_frame, lya_toplot = rest_fram_pars(matched['z'][i],plot_rest_frame)
+	item = matched[matched['KOAjobID']==koajobid]
+	z_plot_rest_frame, lya_toplot = rest_fram_pars(item['z'],plot_rest_frame)
 	if plot_lya_forest: lya_tocut = lya_toplot
 	else: lya_tocut = None
-	koa_data = read_koa_jobid(matched['KOAjobID'][i],stackchan=stackchan,z_plot_rest_frame=z_plot_rest_frame,lya_tocut=lya_tocut,smooth=smooth)
+	koa_data = read_koa_jobid(koajobid,stackchan=stackchan,z_plot_rest_frame=z_plot_rest_frame,lya_tocut=lya_tocut,smooth=smooth)
 	if len(koa_data) == 0: raise IndexError('koa_data is empty.')
 	koa_data = cut_wave_by_snr(koa_data) # cut wavelength by snr
 	koa_spec = connect_chunks(koa_data) # connect chunks
@@ -55,7 +56,8 @@ def get_keck_spec(i, local_dist=100, poly_deg=10, fitcont_mode='poly', plot_rest
 	if plot_lya_forest: lya_tocut = lya_toplot
 	else: lya_tocut = None
 
-	koa_spec = trim_koaspec(i, plot_rest_frame=plot_rest_frame, smooth=smooth) # make spec connected
+	koajobid = matched['KOAjobID'][i]
+	koa_spec = trim_koaspec(koajobid, plot_rest_frame=plot_rest_frame, smooth=smooth) # make spec connected
 	koa_spec, lya_found = cut_lya(koa_spec, lya_toplot, adjust_ind=-100, searchlya=True) # cut lya peak
 	if len(koa_spec[0]) == 0: raise Exception('spectrum is zero length')
 	lam = koa_spec[0]; flux = koa_spec[1]; flux_err = koa_spec[2]

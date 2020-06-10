@@ -1,7 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 import matplotlib
-matplotlib.rc('font',size=15) # global font size
+matplotlib.rc('font',size=5) # global font size
 import time,datetime,copy
 import numpy as np
 import pandas as pd
@@ -21,6 +21,7 @@ from astropy import cosmology
 #path = '/Volumes/SeagateBlack/temple_20200313/zdrift/spec_sim/'
 path = os.path.dirname(os.path.realpath(os.path.dirname(__file__))) + '/' # python/.. -> spec_sim/
 lya_wave = 1215.67 # Angstrom
+lyb_wave = 1025.72 # Angstrom
 keck_catalog = 'elqs' # '.', 'elqs' or 'brightest'
 def nu2aa(nu): return c.c.value / nu * 1e10
 def aa2nu(aa): return c.c.value / aa * 1e10
@@ -95,7 +96,9 @@ def recarr2csv(recarr):
 	return outstr
 
 if keck_catalog == '.': matched=csv2recarr(path+'Table1_matched.csv') # table1 keck csv file
-elif keck_catalog == 'elqs': matched = pd.read_csv(path+'data/elqs_full_sortM1450_addmore.csv').to_records(index=False)
+elif keck_catalog == 'elqs':
+	d = pd.read_csv(path+'data/elqs_full_sortM1450_addmore.csv')
+	matched = d.to_records(index=False)
 
 def saveid_func(i): return '%02d_%03d'%(i,matched['No'][i])
 
@@ -228,6 +231,11 @@ def pkloadgzip(pfile, verbose=True):
 		if sys.version_info.major == 3: results = pickle.load(f, encoding='latin1')
 	if verbose: print('Loaded:%s'%pfile)
 	return results
+
+def subplot_shape(naxes):
+	nrow = np.ceil(np.sqrt(naxes))
+	ncol = np.ceil(naxes/nrow)
+	return int(nrow), int(ncol)
 
 numtest=[23,54,68,105,126,155,161,162,164,186,203,205]
 #numtest=[102,185] # with high resolution

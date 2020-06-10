@@ -19,9 +19,12 @@ def lamflux_from_table(table,z_plot_rest_frame=0.,lya_tocut=None,smooth=True):
 	flux=table[:,5]
 	flux_err=table[:,6]
 	arc_lamp = table[:,10]
+	'''
 	disp=table[:,12]
 	exptime=table[:,13]
-	out=[lam,flux,flux_err,disp,exptime,arc_lamp]
+	'''
+	#out=[lam,flux,flux_err,disp,exptime,arc_lamp]
+	out=[lam,flux,flux_err,arc_lamp]
 	# filter spectrum with prior
 	## flux error >= 0
 	crit=out[2]>=0#flux_err>=0
@@ -88,6 +91,7 @@ def cut_wave_by_snr(specs):
 	    cuttedSpecs: [(lam,flux,flux_err, ...),(lam,flux,flux_err, ...), ... ]
 	'''
 	sortedSpecs,sortedLamlims=sort_lamlim(specs)
+	sortedSpecs = list(sortedSpecs)
 	startsHere=[0] # new unconnected spec starts here
 	for ileft in range(len(sortedSpecs)-1): # excluding the last one
 		foundConnected=False
@@ -100,6 +104,7 @@ def cut_wave_by_snr(specs):
 				overlapLeft=np.vstack(sortedSpecs[ileft]).T[overlapLeftbool].T
 				overlapRightbool=(sortedSpecs[iright][0]>=lamOverlapLim[0])*(sortedSpecs[iright][0]<=lamOverlapLim[1])
 				overlapRight=np.vstack(sortedSpecs[iright]).T[overlapRightbool].T
+				if overlapLeft.size==0 or overlapRight.size==0: continue
 				# interpert overlapRight SNR to overlapRight lam
 				overlapRight_intpSNR=np.interp(overlapLeft[0],overlapRight[0],overlapRight[1]/overlapRight[2]) 
 				# index of higher SNR
@@ -151,6 +156,7 @@ def appendtable(files, stackchan=0, z_plot_rest_frame=0.,lya_tocut=None, smooth=
 	else: tables=[]
 	for f in files:
 		thedata=np.loadtxt(f,skiprows=1)
+		'''
 		# get exptime
 		hdrfile=os.path.abspath(os.path.dirname(f)+'/../hdr/'+os.path.basename(f).replace('_flux.tbl','_hdr.txt'))
 		hdrfits=f.replace('/tbl/','/binaryfits/').replace('/flux/','/hdr/').replace('_flux.tbl','_hdr.fits')
@@ -163,6 +169,7 @@ def appendtable(files, stackchan=0, z_plot_rest_frame=0.,lya_tocut=None, smooth=
 		disp=np.polyval(np.polyfit(col_cen,disp_arcids,3),col) # fit polynomial to disp-col_cen relation and extrapolate -> disp
 		thedata=np.vstack([thedata.T,disp]).T # add disp colunm
 		thedata=np.vstack([thedata.T,exptime]).T # add exptime colunm
+		'''
 		if len(thedata[0])!=0.: 
 			if stackchan: table=np.vstack((table,thedata)) # stack different wavelength channels
 			else: tables.append(thedata)
