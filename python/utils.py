@@ -1,6 +1,5 @@
 from __future__ import division
 from __future__ import print_function
-from importlib import reload
 import matplotlib
 matplotlib.rc('font',size=15) # global font size
 import time,datetime,copy
@@ -9,6 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from astropy.io import fits
 import os,glob,pickle,gzip,sys,itertools
+if sys.version_info.major == 3: from importlib import reload
 from skimage.feature.peak import peak_local_max
 import astropy.units as u
 import astropy.constants as c
@@ -21,6 +21,7 @@ from astropy import cosmology
 #path = '/Volumes/SeagateBlack/temple_20200313/zdrift/spec_sim/'
 path = os.path.dirname(os.path.realpath(os.path.dirname(__file__))) + '/' # python/.. -> spec_sim/
 lya_wave = 1215.67 # Angstrom
+keck_catalog = 'elqs' # '.', 'elqs' or 'brightest'
 def nu2aa(nu): return c.c.value / nu * 1e10
 def aa2nu(aa): return c.c.value / aa * 1e10
 lya_freq = aa2nu(lya_wave) # s-1
@@ -93,7 +94,9 @@ def recarr2csv(recarr):
 	for line in recarr: outstr+='\r'+','.join([str(col) for col in line])
 	return outstr
 
-matched=csv2recarr(path+'Table1_matched.csv') # table1 keck csv file
+if keck_catalog == '.': matched=csv2recarr(path+'Table1_matched.csv') # table1 keck csv file
+elif keck_catalog == 'elqs': matched = pd.read_csv(path+'data/elqs_full_sortM1450_addmore.csv').to_records(index=False)
+
 def saveid_func(i): return '%02d_%03d'%(i,matched['No'][i])
 
 def z_from_koajobid(koajobid):

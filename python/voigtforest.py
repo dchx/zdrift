@@ -10,7 +10,7 @@ from utils import *
 
 # settings
 voigt_is_tau = 1 # whether to treat sum(Voigt1Ds) as tau and flux=exp(-tau)
-para_set = 'fLfG' # 'blgNHI' (used in generate_spec.voigt1d) or 'fLfG' (used in astropy.Voigt1D)
+para_set = 'blgNHI' # 'blgNHI' (used in generate_spec.voigt1d) or 'fLfG' (used in astropy.Voigt1D)
 # derived
 if para_set=='blgNHI': voigt_is_tau = True
 
@@ -143,7 +143,7 @@ def fit_region(lam, flux, noise, ipeaks, continuum=1., addline=True):
 		if len(ipeaks) == 0: il = -1 # no line detected in region
 		while fails < max_fails: # add a line at a time
 			il += 1
-			addaline(paras, il, lam, flux, len(lam)/2, continuum=continuum)
+			addaline(paras, il, lam, flux, int(len(lam)/2), continuum=continuum)
 			paras[para_prefix[0]+str(il)].set(value=np.mean(lam), min=min(lam), max=max(lam)) # adjust lam0 to be mean(lam)
 			if para_set=='fLfG': paras[para_prefix[1]+str(il)].set(value=(np.mean(flux)-np.mean(continuum))) # adjust AL to be mean(flux-cont)
 			if len(flux) - len(paras) <= 1: break # must have ndata - npara > 1 for aicc

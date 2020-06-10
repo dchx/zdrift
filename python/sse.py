@@ -219,9 +219,96 @@ def dvfits2sigma(dvfits, relaerr_all=None, relaerr_thrshld=0.75, dvstd_thrshld=2
 	print('sigma: %.2e +/- %.2e cm/s'%(sigv, sigv_err))
 	return sigv
 
+def two_epoch_templates(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, real_dx, genspec_args, keck_args, cosmo):
+	'''
+	return two epochs' templates, no noise added
+	'''
+	# epoch 1 template
+	lam, flux1_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, 0., genspec_args, keck_args, cosmo=cosmo)
+	# epoch 2 template
+	if real_dx == 0: flux2_temp = flux1_temp
+	else: _, flux2_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, real_dx, genspec_args, keck_args, cosmo=cosmo)
+	return lam, flux1_temp, flux2_temp
+
+def shift_test(chk_boundinds, dxtests, ntemplate, linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, genspec_args, keck_args, cosmo, nphot1, specid, vfparray, lam, zqso, flux2):
+	'''
+	generate a range of test spectra, each correlate with flux2, return the best dx for each chunk
+	nphot1 - to add noise to test spectra, only used if ntemplate==1
+	'''
+	corrs = np.zeros([len(chk_boundinds),len(dxtests)])
+	for idx in range(len(dxtests)): # try each test dx
+		# form 2nd template spectrum
+		if ntemplate==1: # use original template
+			_, fluxtest_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dxtests[idx], genspec_args, keck_args, verbose=False, cosmo=cosmo)
+			fluxtest_temp = add_shot_noise(fluxtest_temp, nphot1)
+		elif ntemplate==2: # shift vfparray to form 2nd template spectrum
+			testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idx])
+			fluxtest_temp = gs.parray2flux_shift(vfparray, lam, shiftmode, dxtests[idx], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
+	
+		# correlation between 2nd template spectrum (fluxtest_temp) and epoch 2 spectrum (flux2)
+		for ichk in range(len(chk_boundinds)): # loop through chunks
+			il = chk_boundinds[ichk, 0]
+			ir = chk_boundinds[ichk, 1]
+			corrs[ichk, idx] = np.corrcoef(fluxtest_temp[il:ir], flux2[il:ir])[0,1]
+	# testing
+	#print('%d chunks'%len(chk_boundinds))
+	#for ichk in range(len(chk_boundinds)):
+	#	dxfitind = np.argmax(corrs[ichk,:])
+	#	dxfit = dxtests[dxfitind]
+	#	testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxfit)
+	#	fluxfit = gs.parray2flux_shift(vfparray, lam, shiftmode, dxfit, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
+	#	testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, real_dx)
+	#	fluxreal = gs.parray2flux_shift(vfparray, lam, shiftmode, real_dx, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
+	#	il = chk_boundinds[ichk, 0]
+	#	ir = chk_boundinds[ichk, 1]
+	#	diffreal = (flux2[il:ir] - fluxreal[il:ir])
+	#	difffit =  (flux2[il:ir] - fluxfit[il:ir])
+	#	corrreal = np.corrcoef(fluxreal[il:ir], flux2[il:ir])[0,1]
+	#	corrfit = np.corrcoef(fluxfit[il:ir], flux2[il:ir])[0,1]
+	#	#corrreal = corrs[ichk, np.argmin(np.abs(dxtests-real_dx))]
+	#	#corrfit = corrs[ichk, dxfitind]
+	#	'''
+	#	plt.plot(lam[il:ir], flux2[il:ir] - fluxreal[il:ir], 'k-x', lw=0.5)
+	#	plt.plot(lam[il:ir], flux2[il:ir] - fluxfit[il:ir], 'r--+', lw=0.5)
+	#	plt.plot(lam[il:ir], diffreal, 'k-x', lw=0.5)
+	#	plt.plot(lam[il:ir], difffit, 'r--+', lw=0.5)
+	#	'''
+	#	for idx in range(len(dxtests)):
+	#		testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idx])
+	#		fluxtest_temp = gs.parray2flux_shift(vfparray, lam, shiftmode, dxtests[idx], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
+	#		plt.plot(lam[il:ir], fluxtest_temp[il:ir], 'r--', lw=0.5)
+	#	plt.plot(lam[il:ir], flux2[il:ir], 'k-', lw=0.5)
+	#	#plt.plot(lam[il:ir], fluxreal[il:ir], 'r--+', lw=0.5)
+	#		
+	#	#print('chunk',ichk,'real dx',real_dx,'corr',corrreal,'fit dx',dxfit,'corr',corrfit, 'real-fit', corrreal-corrfit)
+	#	#print('chunk',ichk,'dxfit',dxfit,'diffreal-difffit',np.mean(diffreal - difffit))
+	#	'''
+	#	plt.plot(dxtests, corrs[ichk,:], 'b-x')
+	#	plt.axvline(dxfit)
+	#	'''
+	#	plt.title('ichk:%d dxfit: %.3f'%(ichk,dxtests[np.argmax(corrs[ichk,:])]))
+	#	plt.show()
+	# ^testing
+	dxfits = dxtests[np.argmax(corrs, axis=1)] # size:nchk, dx with max corrs for each chunk
+	if 'dz' in shiftmode: dvfits = dz2dv(dxfits, zqso)
+	elif 'dv' in shiftmode: dvfits = dxfits
+	return dvfits
+	
+def recover_real_dvfits(dvfits, zerofits, testrange, relaerr_all, relaerr_thrshld=0.75):
+	'''
+	for ntemplate==2, recover real dvfits using zerofits
+	'''
+	# mask zerofits by error relative to testrange
+	relaerr_zerofits = np.abs(zerofits / testrange)
+	zerofits_masked = np.ma.masked_where(relaerr_zerofits > relaerr_thrshld, zerofits)
+	dvfits_masked = np.ma.masked_where(relaerr_all > relaerr_thrshld, dvfits)
+
+	real_dvfits = dvfits_masked - np.atleast_2d(zerofits_masked).T # adjusted for epoch 1 zero point shift
+	return real_dvfits
+
 if __name__ == '__main__':
 	# ---------- set up parameters ----------
-	linelistmode = 'keck' # 'genspec' or 'keck'
+	linelistmode = 'genspec' # 'genspec' or 'keck'
 	### applying for differnt linelistmodes
 	class genspec_args:
 		zqso = 3.
@@ -241,14 +328,14 @@ if __name__ == '__main__':
 	res_fixres = 2e4 # R, useful only if fexres=='res'
 	nphot2 = 1.69e8 # npoht for epoch 2 for add_shot_noise
 	nphot1 = 1**2. * nphot2 # nphot for epoch 1 for add_shot_noise
-	ntemplate = 1 # number of templates to generate; if 1: only template 0 from line list, if 2: another template from voigtfit to epoch 1 spectra
+	ntemplate = 2 # number of templates to generate; if 1: only template 0 from line list, if 2: another template from voigtfit to epoch 1 spectra
 	ntrial = 100
-	chunk_flux_threshold = 'vfregchk' # 'gradchk' for chunking by gradient, 'vfregchk' for chunking by voigtforest regions, 0.8, 0.975
+	chunk_flux_threshold = 'gradchk' # 'gradchk' for chunking by gradient, 'vfregchk' for chunking by voigtforest regions, else (0.8, 0.975) for chunking by percent of flux
 	###### voigtforest fitting for epoch 1 spec
 	CSL_cut = 1.5 # for region detection in voigt fitting, default 1.5
 	vfaddline = True # whether to try add lines when fitting voigtforest
 	###### shift parameters for epoch 2 and test spectra
-	shiftmode = 'dv' # 'dz' / 'dv' / 'dl' (+ 'lw' for adjusting line width too)
+	shiftmode = 'dt' # 'dz' / 'dv' / 'dl' / 'dt' (+ 'lw' for adjusting line width too)
 	if 'dz' in shiftmode:
 		real_dx = 0. # real dz for the second epoch
 		delta_dx = 5e-11 # 2e-10 dz testing step
@@ -258,12 +345,12 @@ if __name__ == '__main__':
 		delta_dx = 0.4  # 0.2 0.4 (cm/s) dv testing step
 		testrange = 390. # 40 200 (cm/s) determines the dv test range [real_dx +/- test_range]
 	elif 'dt' in shiftmode:
-		real_dx = 0 # (cm/s)
-		delta_dx = 0.4
-		testrange = 390.
+		real_dx = 10. # (year)
+		delta_dx = 0.4 # (cm/s)
+		testrange = 390. # (cm/s)
 	###### settings not shown in runid
 	minlinesize = 3 # pixel, min size for each chunk
-	cosmo = liske_cosmo
+	cosmo = liske_cosmo # cosmology model, only for generate_spec
 	######### dvfits to sigma parameters
 	relaerr_thrshld = 0.75 #0.75
 	dvstd_thrshld = +np.inf # (cm/s)
@@ -271,9 +358,6 @@ if __name__ == '__main__':
 	# ---------- set up parameters end ----------
 	
 	# derived parameters
-	dxmin = real_dx - testrange
-	dxmax = real_dx + testrange + delta_dx # add delta_dx for range setup
-	dxtests = np.arange(dxmin, dxmax, delta_dx)
 	if linelistmode == 'genspec':
 		runid = 'zqso%.1f'%genspec_args.zqso
 		runid += '_spec%d'%genspec_args.ispec if genspec_args.ispec != None else '' # ispectxt
@@ -293,11 +377,11 @@ if __name__ == '__main__':
 	runid += '_dlam%.3e'%dlam_fixresele if fixres=='resele' else '_R%.1e'%res_fixres if fixres == 'res' else '' # restxt
 	runid += '_Nphot%.2e'%nphot2 # nphot for epoch 2
 	runid += '_epoch1Nphot%.2e'%nphot1 if nphot1!=nphot2 else '' # nphot for epoch 1
-	runid += '_CSLcut%.1f'%CSL_cut # csltxt
-	runid += '_vfaddline' if vfaddline else '_vfnoaddline'
-	runid += '_shift%s'%shiftmode
+	runid += '_CSLcut%.1f'%CSL_cut # csltxt, for fitting epoch 1 spec
+	runid += '_vfaddline' if vfaddline else '_vfnoaddline' # for fitting epoch 1 spec
+	#runid += '_shift%s'%shiftmode
+	specid = runid # used in vf_tosave and testspec_file, only used if ntemplate==2
 	runid += '_1template' if ntemplate==1 else '' if ntemplate==2 else ''
-	specid = runid # used in vf_tosave and testspec_file
 	runid += '_addnoise' if (ntrial == 1) else '_addnoise%dmean'%ntrial # addnoisetxt
 	runid += '_%s'%chunk_flux_threshold if type(chunk_flux_threshold)==str else '_chk%.3fflux'%chunk_flux_threshold # chunking method
 	runid += '_real%s%.3e'%(shiftmode, real_dx)
@@ -306,21 +390,29 @@ if __name__ == '__main__':
 	# ---------- start run ----------
 	# get dvfits
 	dvfits_file = path + 'paras/dvfits_%s.pickle'%(runid)
+	if ntemplate==2: zerofits_file = path + 'paras/dvfitszero_%s.pickle'%(runid)
 	if os.path.exists(dvfits_file):
 		dvfits = pkload(dvfits_file)
+		if ntemplate==2: zerofits = pkload(zerofits_file)
 	else:
 		print('Running',runid)
 		# ----- get original spectral templates for two epochs -> lam, flux1_temp, flux2_temp -----
-		# epoch 1 template
-		lam, flux1_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, 0., genspec_args, keck_args, cosmo=cosmo)
-		# epoch 2 template
-		if real_dx == 0: flux2_temp = flux1_temp
-		else: _, flux2_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, real_dx, genspec_args, keck_args, cosmo=cosmo)
+		print('Get epoch 1 and 2 spectra template')
+		lam, flux1_temp, flux2_temp = two_epoch_templates(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, real_dx, genspec_args, keck_args, cosmo)
 		# chunk epoch 1 template
 		chk_boundinds = chunk_spec(lam, flux1_temp, minlinesize, chunk_flux_threshold) # chunk by epoch 1 template
 
+		# ----- set test range points -----
+		if 'dt' in shiftmode:
+			shiftmode = shiftmode.replace('dt', 'dv') # test in dv range
+			real_dx = 0. # (cm/s)
+		dxmin = real_dx - testrange
+		dxmax = real_dx + testrange + delta_dx # add delta_dx for range setup
+		dxtests = np.arange(dxmin, dxmax, delta_dx)
+
 		# ----- get voigtforest parameters for 2nd template -----
 		if ntemplate==2:
+			print('Voigt fit for epoch 1 spectra')
 			vf_tosave = path + 'paras/voigtforest_bestp_simed_%s.pzip'%(specid)
 			# get epoch 1 spectrum by adding noise to original template
 			flux1, flux1_err = add_shot_noise(flux1_temp, nphot1, return_error=True)
@@ -338,79 +430,36 @@ if __name__ == '__main__':
 				plt.plot(lam, fluxtest_temp, 'r', lw=0.5) # plot voigtfit of epoch 1 spectrum
 				plt.show()
 
+			# correlate to estimate epoch 1 zero point shift
+			print('Estimate epoch 1 zero point shift')
+			zeromin = 0. - testrange
+			zeromax = 0. + testrange + delta_dx # add delta_dx for range setup
+			zerotests = np.arange(zeromin, zeromax, delta_dx)
+			zerofits = shift_test(chk_boundinds, zerotests, ntemplate, linelistmode, fixres, res_fixres, dlam_fixresele,\
+			                      shiftmode, genspec_args, keck_args, cosmo, nphot1, specid, vfparray, lam, zqso, flux1) # in dv
+			pkdump(zerofits, zerofits_file)
+
 		# ----- do correlation, find best dx -----
+		print('Estimate epoch 2 shift')
 		dvfits = np.zeros([len(chk_boundinds),ntrial]) # the best fit redshift for each of 100 trials for each chunk
 		t0 = time.time()
 		ntrial = 100
-		if 'dt' in shiftmode: shiftmode = shiftmode.replace('dt', 'dv') # test in dv range
 		for i in range(ntrial): # try 100 times
 			t1 = time.time()
 			# add noise to epoch 2 original template
 			flux2 = add_shot_noise(flux2_temp, nphot2, return_error=False)
 			# test different dx
-			corrs = np.zeros([len(chk_boundinds),len(dxtests)])
-			for idx in range(len(dxtests)): # try each test dx
-				# form 2nd template spectrum
-				if ntemplate==1: # use original template
-					_, fluxtest_temp = get_template(linelistmode, fixres, res_fixres, dlam_fixresele, shiftmode, dxtests[idx], genspec_args, keck_args, verbose=False, cosmo=cosmo)
-					fluxtest_temp = add_shot_noise(fluxtest_temp, nphot1)
-				elif ntemplate==2: # shift vfparray to form 2nd template spectrum
-					testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idx])
-					fluxtest_temp = gs.parray2flux_shift(vfparray, lam, shiftmode, dxtests[idx], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
-		
-				# correlation between 2nd template spectrum (fluxtest_temp) and epoch 2 spectrum (flux2)
-				for ichk in range(len(chk_boundinds)): # loop through chunks
-					il = chk_boundinds[ichk, 0]
-					ir = chk_boundinds[ichk, 1]
-					corrs[ichk, idx] = np.corrcoef(fluxtest_temp[il:ir], flux2[il:ir])[0,1]
-			# testing
-			#print('%d chunks'%len(chk_boundinds))
-			#for ichk in range(len(chk_boundinds)):
-			#	dxfitind = np.argmax(corrs[ichk,:])
-			#	dxfit = dxtests[dxfitind]
-			#	testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxfit)
-			#	fluxfit = gs.parray2flux_shift(vfparray, lam, shiftmode, dxfit, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
-			#	testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, real_dx)
-			#	fluxreal = gs.parray2flux_shift(vfparray, lam, shiftmode, real_dx, zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
-			#	il = chk_boundinds[ichk, 0]
-			#	ir = chk_boundinds[ichk, 1]
-			#	diffreal = (flux2[il:ir] - fluxreal[il:ir])
-			#	difffit =  (flux2[il:ir] - fluxfit[il:ir])
-			#	corrreal = np.corrcoef(fluxreal[il:ir], flux2[il:ir])[0,1]
-			#	corrfit = np.corrcoef(fluxfit[il:ir], flux2[il:ir])[0,1]
-			#	#corrreal = corrs[ichk, np.argmin(np.abs(dxtests-real_dx))]
-			#	#corrfit = corrs[ichk, dxfitind]
-			#	'''
-			#	plt.plot(lam[il:ir], flux2[il:ir] - fluxreal[il:ir], 'k-x', lw=0.5)
-			#	plt.plot(lam[il:ir], flux2[il:ir] - fluxfit[il:ir], 'r--+', lw=0.5)
-			#	plt.plot(lam[il:ir], diffreal, 'k-x', lw=0.5)
-			#	plt.plot(lam[il:ir], difffit, 'r--+', lw=0.5)
-			#	'''
-			#	for idx in range(len(dxtests)):
-			#		testspec_file = path + 'data/test_spec/testspec_%s_%s%.3e.pickle'%(specid, shiftmode, dxtests[idx])
-			#		fluxtest_temp = gs.parray2flux_shift(vfparray, lam, shiftmode, dxtests[idx], zqso, voigt_is_tau=vf.voigt_is_tau, v1d=vf.v1d, tosave=testspec_file, cosmo=cosmo)
-			#		plt.plot(lam[il:ir], fluxtest_temp[il:ir], 'r--', lw=0.5)
-			#	plt.plot(lam[il:ir], flux2[il:ir], 'k-', lw=0.5)
-			#	#plt.plot(lam[il:ir], fluxreal[il:ir], 'r--+', lw=0.5)
-			#		
-			#	#print('chunk',ichk,'real dx',real_dx,'corr',corrreal,'fit dx',dxfit,'corr',corrfit, 'real-fit', corrreal-corrfit)
-			#	#print('chunk',ichk,'dxfit',dxfit,'diffreal-difffit',np.mean(diffreal - difffit))
-			#	'''
-			#	plt.plot(dxtests, corrs[ichk,:], 'b-x')
-			#	plt.axvline(dxfit)
-			#	'''
-			#	plt.title('ichk:%d dxfit: %.3f'%(ichk,dxtests[np.argmax(corrs[ichk,:])]))
-			#	plt.show()
-			# ^testing
-			dxfits = dxtests[np.argmax(corrs, axis=1)] # size:nchk, dx with max corrs for each chunk
-			if 'dz' in shiftmode: dvfits[:, i] = dz2dv(dxfits, zqso)
-			elif 'dv' in shiftmode: dvfits[:, i] = dxfits
+			dvfits[:, i] = shift_test(chk_boundinds, dxtests, ntemplate, linelistmode, fixres, res_fixres, dlam_fixresele,\
+			                          shiftmode, genspec_args, keck_args, cosmo, nphot1, specid, vfparray, lam, zqso, flux2)
 			print('Trial %02d, cost %.2f min, total %.2f min, dvfit median: %.2f cm/s'%(i, (time.time()-t1)/60., (time.time()-t0)/60., np.median(dvfits[:, i])))
 		# save dvfits
 		pkdump(dvfits, dvfits_file)
-	
+
 	# ----- calculate sigma -----
 	if 'dz' in shiftmode: real_dx = dz2dv(real_dx, zqso) # convert real_dx to real_dv
-	print('real dv: %.2f cm/s'%real_dx)
+	if not 'dt' in shiftmode: print('real dv: %.2f cm/s'%real_dx)
 	relaerr_all = np.abs((real_dx - dvfits) / testrange)
+	if ntemplate==2:
+		dvfits = recover_real_dvfits(dvfits, zerofits, testrange, relaerr_all, relaerr_thrshld)
+		relaerr_all = np.abs((real_dx - dvfits) / testrange)
 	dvfits2sigma(dvfits, relaerr_all, relaerr_thrshld, dvstd_thrshld, bs_time)

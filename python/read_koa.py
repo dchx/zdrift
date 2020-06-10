@@ -184,7 +184,7 @@ def multiargmax(thelist):
 	return np.where(thelist==themax)[0]
 
 def koa_filelist(koajobid,type='tbl'):
-	toglob = path+'data/Keck/KOA_%d/HIRES/extracted/tbl/ccd*/flux/*.tbl'%koajobid
+	toglob = path+'data/Keck/' + keck_catalog + '/KOA_%d/HIRES/extracted/tbl/ccd*/flux/*.tbl'%koajobid
 	files = np.array(glob.glob(toglob))
 	# observation ids
 	ids = [] # like 20051028.26873_3_03, for every file
@@ -283,7 +283,7 @@ def get_res(koajobid):
 	and the list of koaids for that resolution
 	'''
 	koaid = koa_filelist(koajobid,type='oneobsids')[0][:-2]
-	fitsfile = path+'data/Keck/KOA_%d/HIRES/raw/sci/HI.%s.fits'%(koajobid,koaid)
+	fitsfile = path+'data/Keck/' + keck_catalog + '/KOA_%d/HIRES/raw/sci/HI.%s.fits'%(koajobid,koaid)
 	head = fits.getheader(fitsfile)
 	res = float(head['SPECRES'])
 	return res
