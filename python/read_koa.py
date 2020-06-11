@@ -190,7 +190,7 @@ def multiargmax(thelist):
 	themax=np.max(thelist)
 	return np.where(thelist==themax)[0]
 
-def koa_filelist(koajobid,type='tbl'):
+def koa_filelist(koajobid,type='tbl', keck_catalog=keck_catalog):
 	toglob = path+'data/Keck/' + keck_catalog + '/KOA_%d/HIRES/extracted/tbl/ccd*/flux/*.tbl'%koajobid
 	files = np.array(glob.glob(toglob))
 	# observation ids
@@ -240,7 +240,7 @@ def koa_filelist(koajobid,type='tbl'):
 		if type=='oneobs': return diffkid_filegroups[imaxfilesize] # [array(path, path, ...), array(), ...] grouped by ccd
 		elif type=='oneobsids':return koaid_ccds_unq_maxccd[imaxfilesize] # [koaid_ccd, koaid_ccd, ...] with same koaid (selected)
 
-def read_koa_jobid(koajobid,stackchan=0,z_plot_rest_frame=0.,lya_tocut=None,smooth=True):
+def read_koa_jobid(koajobid,stackchan=0,z_plot_rest_frame=0.,lya_tocut=None,smooth=True, keck_catalog=keck_catalog):
 	'''
 	input int/str koajobid, return lam,flux,flux_err,disp
 	stackchan: whether to stack different wavelength channels
@@ -249,9 +249,9 @@ def read_koa_jobid(koajobid,stackchan=0,z_plot_rest_frame=0.,lya_tocut=None,smoo
 	   2: stack same ccd and koaid 
 	   3: stack same ccd and koaid, only show one observation (koaid) (with most ccds and file size)
 	'''
-	if stackchan==2: out=koa_filelist(koajobid,type='group')
-	elif stackchan==3 or stackchan==0: out=koa_filelist(koajobid,type='oneobs')
-	else: out=koa_filelist(koajobid)
+	if stackchan==2: out=koa_filelist(koajobid,type='group', keck_catalog=keck_catalog)
+	elif stackchan==3 or stackchan==0: out=koa_filelist(koajobid,type='oneobs', keck_catalog=keck_catalog)
+	else: out=koa_filelist(koajobid, keck_catalog=keck_catalog)
 	if len(out)==0: print(koajobid, ': table file not found'); return
 	files_filegroups = out
 	if stackchan==2 or stackchan==3:
@@ -284,12 +284,12 @@ def plot_koa_spec(thedata,ax,stackchan=0):
 			lines.append(make_spec_plot(lam,flux,ax)[0])
 	return lines
 
-def get_res(koajobid):
+def get_res(koajobid, keck_catalog=keck_catalog):
 	'''
 	return the resolution with maximum number of fitsfiles
 	and the list of koaids for that resolution
 	'''
-	koaid = koa_filelist(koajobid,type='oneobsids')[0][:-2]
+	koaid = koa_filelist(koajobid,type='oneobsids', keck_catalog=keck_catalog)[0][:-2]
 	fitsfile = path+'data/Keck/' + keck_catalog + '/KOA_%d/HIRES/raw/sci/HI.%s.fits'%(koajobid,koaid)
 	head = fits.getheader(fitsfile)
 	res = float(head['SPECRES'])

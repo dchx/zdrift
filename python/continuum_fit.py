@@ -2,15 +2,16 @@ from utils import *
 from scipy import interpolate
 from read_koa import cut_wave_by_snr,read_koa_jobid,flux_smooth
 
-def trim_koaspec(koajobid, stackchan=0, plot_rest_frame=True, plot_lya_forest=True, smooth=True):
+def trim_koaspec(koajobid, stackchan=0, plot_rest_frame=True, plot_lya_forest=True, smooth=True, keck_catalog=keck_catalog):
 	'''
 	input koajobid, output [lam, flux, flux_err, disp, exptime, arclamp] connected
 	'''
+	matched = get_matched(keck_catalog)[1]
 	item = matched[matched['KOAjobID']==koajobid]
 	z_plot_rest_frame, lya_toplot = rest_fram_pars(item['z'],plot_rest_frame)
 	if plot_lya_forest: lya_tocut = lya_toplot
 	else: lya_tocut = None
-	koa_data = read_koa_jobid(koajobid,stackchan=stackchan,z_plot_rest_frame=z_plot_rest_frame,lya_tocut=lya_tocut,smooth=smooth)
+	koa_data = read_koa_jobid(koajobid,stackchan=stackchan,z_plot_rest_frame=z_plot_rest_frame,lya_tocut=lya_tocut,smooth=smooth, keck_catalog=keck_catalog)
 	if len(koa_data) == 0: raise IndexError('koa_data is empty.')
 	koa_data = cut_wave_by_snr(koa_data) # cut wavelength by snr
 	koa_spec = connect_chunks(koa_data) # connect chunks

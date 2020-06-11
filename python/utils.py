@@ -95,10 +95,17 @@ def recarr2csv(recarr):
 	for line in recarr: outstr+='\r'+','.join([str(col) for col in line])
 	return outstr
 
-if keck_catalog == '.': matched=csv2recarr(path+'Table1_matched.csv') # table1 keck csv file
-elif keck_catalog == 'elqs':
-	d = pd.read_csv(path+'data/elqs_full_sortM1450_addmore.csv')
-	matched = d.to_records(index=False)
+def get_matched(keck_catalog):
+	if keck_catalog == '.':
+		d = pd.read_csv(path+'Table1_Keck_addKOAjobID.csv')
+		#matched=csv2recarr(path+'Table1_matched.csv') # table1 keck csv file
+		matched = d.to_records(index=False)
+	elif keck_catalog == 'elqs':
+		d = pd.read_csv(path+'data/elqs_full_sortM1450_addmore.csv')
+		matched = d.to_records(index=False)
+	return d, matched
+
+d, matched = get_matched(keck_catalog)
 
 def saveid_func(i): return '%02d_%03d'%(i,matched['No'][i])
 
