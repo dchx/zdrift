@@ -1,4 +1,6 @@
 """
+Codes from https://bitbucket.org/dsorini/pygadds
+
 Fit mock absorption spectra with Voigt profiles using the VAMP Bayesian VP fitter.
 
 Romeel Dave, April 2019
