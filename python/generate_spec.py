@@ -3,11 +3,12 @@ Generate Lya forest from literature parameter distributions following Kim et al.
 '''
 from __future__ import print_function
 from utils import *
+from spec_utils import *
+import spec_utils as su
 from scipy.stats import rv_continuous
 from scipy import integrate,special
-from read_koa import flux_smooth
 from cosmology import dxs_2nd_epoch
-LiskeDist = 1
+LiskeDist = 0
 
 # ----------- b distribution -----------
 
@@ -96,42 +97,35 @@ def int_dndz(zleft, zright):
 	bp1 = b_dndz + 1. # b + 1
 	return a_dndz / bp1 * ((1. + zright)**bp1 - (1. + zleft)**bp1)
 
-def z_lyb(z_qso):
-	'''
-	redshift of lyman beta
-	'''
-	lyb2lya = 27. / 32. # (1 - 1/2^2) / (1 - 1/3^2)
-	return lyb2lya * (1. + z_qso) - 1.
-
 def z_dist(z, z_qso, zleft=z_left):
 	'''
 	z - the redshift to calculate pdf
 	z_qso - z of qso, the right bound to ingegrate dndz
 	'''
-	left = max(zleft, z_lyb(z_qso))
+	left = max(zleft, su.z_lyb(z_qso))
 	return dndz(z) / int_dndz(left, z_qso) # normalize to 1
 class z_gen(rv_continuous):
 	'''
 	z distribution generator
 	'''
 	def _pdf(self, z, zleft, z_qso):
-		left = max(zleft, z_lyb(z_qso))
+		left = max(zleft, su.z_lyb(z_qso))
 		if z < left or z > z_qso: return 0.
 		else: return z_dist(z, z_qso, left)
 
 # ----------- number of lines -----------
 
-def nlines(z_qso, zleft=z_left, NHIleft=NHI_left, NHIright=NHI_right):
+def nlines(z_qso, zleft=z_left, NHIleft=NHI_left, NHIright=NHI_right, random=True):
 	'''
 	number of lines in the lya forest as function of z_qso
 	'''
 	# number of lines in the range 13.64 < log10(NHI) < 16
-	left = max(zleft, z_lyb(z_qso))
+	left = max(zleft, su.z_lyb(z_qso))
 	nl = int_dndz(left, z_qso)
 	# convert nlines in 13.64 < log10(NHI) < 16 to designated NHI range
 	NHI_norm_factor = int_dndNHI(NHIleft, NHIright) / int_dndNHI(10.**13.64, 1e16) 
 	nl = nl * NHI_norm_factor
-	nl = np.random.poisson(nl)
+	if random: nl = np.random.poisson(nl)
 	return int(round(nl))
 
 # ----------- combined distribution -----------
@@ -149,7 +143,7 @@ def fzNb(z, NHI, b):
 
 # ----------- line profile -----------
 
-gamma_lya = 7618.*1e8 / lya_wave # s-1, gamma_{ul}
+gamma_lya = 7618.*1e8 / su.lya_wave # s-1, gamma_{ul}
 flu_lya = 0.4164
 # intrisic line profile
 def phi_intrin(nu, nu0=lya_freq, gamma=gamma_lya):
@@ -165,7 +159,7 @@ def voigt_tointegrate(v, b, nu, nu0=lya_freq, gamma=gamma_lya):
 	gauss_part = np.exp(- v**2. / b**2.) / (b * np.sqrt(np.pi)) 
 	lorentz_part = 4. * gamma / (16. * np.pi**2. * (nu - (1. - v * 1e3 / c.c.value) * nu0)**2. + gamma**2.)
 	return gauss_part * lorentz_part
-def phi_nu(nu, b, nu0=lya_freq, gamma=gamma_lya):
+def phinu(nu, b, nu0=lya_freq, gamma=gamma_lya):
 	nu = np.atleast_1d(nu)
 	# use integrate
 	#intout = np.array([integrate.quad(voigt_tointegrate, -np.inf, np.inf, args=(b, nui, nu0, gamma))[0] for nui in nu])
@@ -177,7 +171,7 @@ def phi_nu(nu, b, nu0=lya_freq, gamma=gamma_lya):
 	
 def phi_lam(lam, b, nu0=lya_freq, gamma=gamma_lya):
 	nu = aa2nu(lam)
-	return phi_nu(nu, b, nu0, gamma)
+	return phinu(nu, b, nu0, gamma)
 
 # ----------- voigt profile approximation -----------
 
@@ -205,21 +199,52 @@ def voigt_profile_lam(lam, b, nu0=lya_freq, gamma=gamma_lya):
 
 # ----------- optical depth -----------
 
+e2mec = (c.e.to('C')**2. / (4. * np.pi * c.eps0.to('s2 C2 / (cm3 kg)') * c.m_e * c.c.to('cm/s'))).value # e^2/(m_e c) in cm2/s
 def tau0(NHI, b):
+	'''
+	optical depth at line center for Lya (Draine eq 9.8)
+	NHI in cm-2, b in km/s
+	'''
+	fac = np.sqrt(np.pi) * e2mec # = 1.497e-2 cm2/s
+	tau0 = 1e-13 * fac * su.lya_wave * flu_lya * NHI / b
+	return tau0
+def tau0_empirical(NHI, b):
 	'''
 	optical depth at line center for Lya (Draine eq 9.10)
 	assuming gaussian only
 	NHI in cm-2, b in km/s
 	'''
 	return 0.758 * (NHI / 1e13) * (10. / b)
-def tau_nu(nu, b, NHI, nu0=lya_freq, gamma=gamma_lya):
+def tau0_liske(NHI, b):
+	'''
+	NHI in cm-2, b in km/s
+	'''
+	SQRTPI = 1.772453850905516 # Square root of pi
+	Q_EL =   1.602176634e-19   # Electron charge in C
+	PI =     np.pi             # Pi
+	EPS_0 =  8.8541878128e-12  # Permittivity of free space in C^2/Nm^2
+	M_EL =   9.1093837015e-31  # Electron mass in kg
+	C =      299792.458        # Velocity of light in km/s
+	fac = 1.0e-12 * SQRTPI * Q_EL*Q_EL / (4.0*PI * EPS_0 * M_EL * C)
+	taucen = fac * su.lya_wave * flu_lya * NHI / b
+	return taucen
+def tau_nu(nu, b, NHI, nu0=lya_freq, gamma=gamma_lya, normalize='tau0'):
+	'''
+	normalize - normalization method
+	   tau0: normalize by tau0 (tau_center)
+	   phi_nu: normalize phi_nu to one
+	'''
 	phi_nu = voigt_profile(nu, b, nu0, gamma)
-	phi_nu_norm = phi_nu / abs(integrate.trapz(phi_nu, nu)) # normalize to one
-	#pie2mec = np.pi * c.e.value**2. / (c.m_e.cgs.value * c.c.cgs.value)
-	pie2mec = 1.497e-2 * np.sqrt(np.pi)
-	taunu = pie2mec * flu_lya * NHI * phi_nu_norm
+	if normalize=='phi_nu': # normalize phi_nu to one
+		phi_nu_norm = phi_nu / abs(integrate.trapz(phi_nu, nu)) # normalize to one
+		pie2mec = np.pi * e2mec # in cm2/s
+		taunu = pie2mec * flu_lya * NHI * phi_nu_norm
+	elif normalize=='tau0': # normalize by tau0
+		phi_nu0 =  voigt_profile_onevalue(nu0, b, nu0, gamma)
+		tau_0 = tau0(NHI, b)
+		taunu = phi_nu / phi_nu0 * tau_0
 	return taunu
-def tau_lam(lam, b, NHI, lam0=lya_wave, gamma=gamma_lya):
+def tau_lam(lam, b, NHI, lam0=su.lya_wave, gamma=gamma_lya):
 	nu = aa2nu(lam)
 	nu0 = aa2nu(lam0)
 	return tau_nu(nu, b, NHI, nu0, gamma)
@@ -256,11 +281,13 @@ def parray2flux(parray, lam, continuum=1., voigt_is_tau=True, v1d=voigt1d, tosav
 		flux = form_spec(continuum, tau, voigt_is_tau=voigt_is_tau)
 		if tosave: pkdump(flux, tosave)
 	return flux
-def parray2flux_shift(parray, lam, shiftmode, dx, zqso, continuum=1., voigt_is_tau=True, v1d=voigt1d, tosave=None, cosmo=cosmology.Planck15):
+def parray2flux_shift(parray, lam, shiftmode, dx, zqso=None, continuum=1., voigt_is_tau=True, v1d=voigt1d, tosave=None, rest_frame=False, cosmo=cosmology.Planck15):
 	'''
 	parray - shape:(nparas, nlines) [lam0, lgNHI, b] (for v1d=voigt1d) or [lam0, AL, fL, fG] (for v1d=Voigt1D)
+	lam - should be in observed frame
 	shiftmode - 'dz'/'dv'(+'lw') or 'dl'
 	dx - redshift drift, scalar or size:nlines
+	rest_frame - whether parray[0] and lam in rest frame
 	'''
 	if tosave and os.path.exists(tosave):
 		flux = pkload(tosave, verbose=False)
@@ -268,54 +295,70 @@ def parray2flux_shift(parray, lam, shiftmode, dx, zqso, continuum=1., voigt_is_t
 		# shift lam0s for dl
 		if 'dl' in shiftmode: parray[0] += dx
 		else: # dz or dv
+			if rest_frame: zs = su.lam2z(su.obs_frame(parray[0], zqso))
+			else: zs = su.lam2z(parray[0])
 			# shift lam0s
-			if 'dt' in shiftmode: dx = dxs_2nd_epoch(parray[0], period=dx, shiftmode='dv', cosmo=cosmo) # convert to dv
-			if 'dz' in shiftmode: factor = 1. + dx / (1. + zqso)
-			elif ('dv' in shiftmode) or ('dt' in shiftmode): factor = 1. + dx / c.c.to('cm/s').value
+			if 'dt' in shiftmode: dx = dxs_2nd_epoch(zs, period=dx, shiftmode='dz', cosmo=cosmo) # convert to dz
+			if ('dz' in shiftmode) or ('dt' in shiftmode): factor = dx / (1. + zs)
+			elif 'dv' in shiftmode: factor = dx / c.c.to('cm/s').value
 			else: raise ValueError("shiftmode should be dt, dz, dl or dv, not %s."%mode)
-			parray[0] *= factor
+			parray[0] += parray[0] * factor
 			# shift line widths
 			if 'lw' in shiftmode:
-				parray[2] *= factor
-				if v1d.__name__=='Voigt1D': parray[3] *= factor
+				parray[2] += parray[2] * factor
+				if v1d.__name__=='Voigt1D': parray[3] += parray[3] * factor
 		# flux
 		flux = parray2flux(parray, lam, continuum=continuum, voigt_is_tau=voigt_is_tau, v1d=v1d)
 		if tosave: pkdump(flux, tosave)
 	return flux
 
+def lam_next(lam0, res=2e4, res_ele=4.):
+	'''
+	compute lam of next pixel
+	lam0 - lam of current pixel
+	res - R
+	res_els - N pixel per resolution element
+	'''
+	twoNR = 2. * res_ele * res
+	lam1 = (twoNR + 1.) / (twoNR - 1.) * lam0
+	return lam1
+
 def lam_grid(lam_left, lam_right, fix, res=2e4, res_ele=4., dlam_fixresele=0.0125, return_nlam=False, tosave=None, verbose=True):
 	'''
-	if fix=='res', use res
-	if fix=='resele', use res_ele, dlam_fixresele
+	if fix=='res', use res, res_ele
+	if fix=='resele', fix dlam, use res_ele, dlam_fixresele
 	res_ele - default 4 (Liske2008), resolution element size in pixel
 	dlam_fixresele - AA per pixel, useful only if fix=='resele'
 	return_nlam - only return nlam?
 	'''
-	if fix == 'res':
-		# dlam = 1e3 / 2. / res # for 2 pix / resolution element at 1000 AA
-		dlam = 5e3 / res_ele / res # for 4 pix / resolution element at 5000 AA (Liske2008)
-	elif fix == 'resele':
-		dlam = dlam_fixresele
-	else: raise Exception("argument 'fix' should be either 'res' or 'resele'")
-	# lam points
 	if tosave!=None and os.path.exists(tosave):
 		lam = pkload(tosave, verbose=verbose)
 		if return_nlam: return np.size(lam)
 	else:
-		nlam = int(round((lam_right - lam_left) / dlam))
-		if return_nlam: return nlam
-		lam = np.linspace(lam_left, lam_right, nlam)
+		if fix == 'res':
+			# un-uniform dlam
+			lam = []
+			lam0 = lam_left
+			while lam_left <= lam0 and lam0 <= lam_right:
+				lam.append(lam0)
+				lam0 = lam_next(lam0, res, res_ele)
+			lam = np.array(lam)
+		elif fix == 'resele':
+			dlam = dlam_fixresele
+			nlam = int(round((lam_right - lam_left) / dlam))
+			lam = np.linspace(lam_left, lam_right, nlam)
+			res = lam / dlam / res_ele # no unit, change across lam
+		else: raise Exception("argument 'fix' should be either 'res' or 'resele'")
+		if return_nlam: return lam.size
 		if tosave!=None: pkdump(lam, tosave)
-	if fix == 'res': res_ele = np.mean(lam / dlam / res) # in pixels
-	elif fix == 'resele': res = lam / dlam / res_ele # no unit
-	return lam, res_ele
+	return lam
 
 def bNHIz_generator(zqso, blgNHIz_file, z_left=z_left, NHI_left=NHI_left, NHI_right=NHI_right, rest_frame=True, LiskeDist=LiskeDist):
 	# --- get b, NHI and z parameters for each line ---
 	if os.path.exists(blgNHIz_file) and __name__!='__main__': # load previously saved parameters
 		bs, lgNHIs, zs = pkload(blgNHIz_file, verbose=False)
 	else:
-		z_left = max(z_left, z_lyb(zqso)) # spectra left bound in z
+		z_left = max(z_left, su.z_lyb(zqso)) # spectra left bound in z
 		# number of lines
 		nl = nlines(zqso)
 		# generate bs
@@ -333,24 +376,23 @@ def bNHIz_generator(zqso, blgNHIz_file, z_left=z_left, NHI_left=NHI_left, NHI_ri
 		z_distribution = z_gen(name='z', a=z_left, b=zqso)
 		zs = z_distribution.rvs(size=nl, zleft=z_left, z_qso=zqso)
 		pkdump((bs, lgNHIs, zs), blgNHIz_file)
-	if rest_frame: lam0s = lya_wave * (1. + zs) / (1. + zqso)
-	else: lam0s = lya_wave * (1. + zs)
+	if rest_frame: lam0s = su.lya_wave * (1. + zs) / (1. + zqso)
+	else: lam0s = su.lya_wave * (1. + zs)
 	# form parray
 	parray = np.array([lam0s, lgNHIs, bs])
 	return parray
 
-def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dx=0., rest_frame=True, shiftmode='dz', ispec=None, verbose=True, cosmo=cosmology.Planck15):
+def generate_spec(zqso, res=2e4, res_ele=4., dlam=0.0125, fix='res', dx=0., rest_frame=False, shiftmode='dz', ispec=None, verbose=True, cosmo=cosmology.Planck15):
 	'''
 	zqso - redshift of quassar
 	res - spectral resolution, used if fix=='res'
 	dlam - AA per pixel, 0.0125 for Liske2008, used if fix=='resele'
-	fix - 'res' or 'resele'
 	dx - shift in z, v or lam, or in time (year)
 	fix - if 'res', fix resolution and use different resolution element sizes at different lams;
 	      if 'resele', fix resolution element size and use different resolution R values at different lams;
 	rest_frame - whether to generate spectra in rest frame (or in observed frame)
 	shiftmode - 'dt'/'dz'/'dv'(+'lw') or 'dl'. 'dz' if dx is shift in z, 'dl' if dx is shift in lambda
-	ispec - index of spectra, if want to generate multiple spectra with same parameters
+	ispec - index of spectra, if want to generate multiple spectra with same parameters, else None
 	cosmo - only used if shiftmode=='dt'
 	
 	Returns
@@ -362,28 +404,33 @@ def generate_spec(zqso, res=2e4, dlam=0.0125, fix='res', dx=0., rest_frame=True,
 	liskedisttxt = '_LiskeDist' if LiskeDist else ''
 	suffix = ispectxt + liskedisttxt
 
-	spec_file = path + 'data/gen_spec/gen_spec%s_zqso%.1f%s_%s%.3e%s.pickle'%(restframetxt,zqso,restxt,shiftmode,dx,suffix)
+	spec_file = path + 'data/gen_spec/gen_spec%s_zqso%.3f%s_%s%.3e%s.pickle'%(restframetxt,zqso,restxt,shiftmode,dx,suffix)
+	loaded = False
 	if os.path.exists(spec_file):# and __name__!='__main__': # load previously saved spectra, all not added noise
-		lam, flux = pkload(spec_file, verbose=verbose)
-	else:
+		try:
+			lam, flux = pkload(spec_file, verbose=verbose)
+			loaded = True
+		except Exception:
+			loaded = False
+	if not loaded:
 		# wavelength range
-		left = max(z_left, z_lyb(zqso)) # spectra left bound in z
+		left = max(z_left, su.z_lyb(zqso)) # spectra left bound in z
 		if rest_frame:
-			lam_left = lya_wave * (1. + left) / (1. + zqso)
-			lam_right = lya_wave
+			lam_left = su.lya_wave * (1. + left) / (1. + zqso)
+			lam_right = su.lya_wave
 		else:
-			lam_left = lya_wave * (1. + left)
-			lam_right = lya_wave * (1. + zqso)
+			lam_left = su.lya_wave * (1. + left)
+			lam_right = su.lya_wave * (1. + zqso)
 		# lam points
-		lam, res_ele = lam_grid(lam_left, lam_right, fix, res=res, dlam_fixresele=dlam)
+		lam = lam_grid(lam_left, lam_right, fix, res=res, res_ele=res_ele, dlam_fixresele=dlam)
 		# line parameter file
-		blgNHIz_file = path + 'paras/blgNHIz_zqso%.1f%s.pickle'%(zqso,suffix)
+		blgNHIz_file = path + 'paras/blgNHIz_zqso%.3f%s.pickle'%(zqso,suffix)
 		# --- get b, NHI and z parameters for each line ---
 		parray = bNHIz_generator(zqso, blgNHIz_file, rest_frame=rest_frame)
 		# --- form spectrum from parameters ---
-		flux = parray2flux_shift(parray, lam, shiftmode, dx, zqso, voigt_is_tau=True, v1d=voigt1d, cosmo=cosmo)
+		flux = parray2flux_shift(parray, lam, shiftmode, dx, zqso, voigt_is_tau=True, v1d=voigt1d, cosmo=cosmo, rest_frame=rest_frame)
 		# convolve with resolution element
-		flux = flux_smooth(flux, int(res_ele))
+		flux = su.flux_smooth(flux, int(res_ele))
 		# save spectra
 		pkdump((lam, flux), spec_file)
 	return lam, flux
@@ -425,7 +472,7 @@ if __name__ == '__main__':
 
 	# z distribution
 	z_qso = 4.
-	left = max(z_left, z_lyb(z_qso))
+	left = max(z_left, su.z_lyb(z_qso))
 	z_distribution = z_gen(name='z', a=left, b=z_qso)
 	#
 	zs = np.linspace(left, z_qso, 100)
@@ -486,6 +533,6 @@ if __name__ == '__main__':
 	plt.xlabel('$\lambda$ ($\AA$)')
 	plt.ylabel('Normalized flux')
 	plt.tight_layout()
-	tosave = path + 'plots/generate_spec_zqso%.1f.pdf'%zqso
+	tosave = path + 'plots/generate_spec_zqso%.3f.pdf'%zqso
 	plt.savefig(tosave);print('Saved:%s'%tosave)
 	plt.show()

@@ -2,6 +2,7 @@
 
 # this version divides the spectrum into line regions for correlation.
 from utils import *
+from spec_utils import *
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import matplotlib.cm as cm
@@ -23,7 +24,6 @@ ind = 7; # lamrange=[900.,1200.]; R=35800
 good_inds = 7, 30, 33, 35, 39, 41, 59 # good distribution
 soso_inds = 19, 31, 37, 48, 53, 54 # have peak at 0 but shorter than good peak
 bigpeak_inds = 24, 27, 28, 42, 44, 49, 50 # have spike like peak
-ind = 7
 #koa_spec = koa_normed_spec(ind)
 koa_spec = get_keck_spec(ind, normalize=False)
 lamrange = [np.min(koa_spec[0]), np.max(koa_spec[0])] 

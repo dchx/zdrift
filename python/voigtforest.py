@@ -7,6 +7,8 @@ import vamp
 from astropy.modeling.models import Voigt1D
 import generate_spec as gs
 from utils import *
+from spec_utils import *
+import spec_utils as su
 
 # settings
 voigt_is_tau = 1 # whether to treat sum(Voigt1Ds) as tau and flux=exp(-tau)
@@ -127,20 +129,23 @@ def fit_region(lam, flux, noise, ipeaks, continuum=1., addline=True):
 	ipeaks - (array) indexes of lam for line peaks
 	addline - whether try to add lines after fit
 	'''
+	plot = 0
+	nlines = len(ipeaks)
 	# initialize parameters
 	paras = lf.Parameters()
-	for il in range(len(ipeaks)): addaline(paras, il, lam, flux, ipeaks[il], continuum=continuum)
-	flux_guess = gs.form_spec(continuum, multivoigt_paras(paras, lam), voigt_is_tau=voigt_is_tau)
+	for il in range(nlines): addaline(paras, il, lam, flux, ipeaks[il], continuum=continuum)
+	if plot: flux_guess = gs.form_spec(continuum, multivoigt_paras(paras, lam), voigt_is_tau=voigt_is_tau)
 	# fit voigt for this region
 	if len(flux) <= len(paras): return None # must have ndata > npara for leastsq
 	fitresult = lf.minimize(voigt_residual, paras, args=(multivoigt_paras, lam, flux, noise, continuum))
 	fitresult.initparams = paras
 
 	# decide whether to add line
+	if nlines >= 20: addline = False # don't try to add line if too many
 	if addline:
 		max_fails = 2 # how many times of fails allowed for adding a line at a time
 		fails = 0
-		if len(ipeaks) == 0: il = -1 # no line detected in region
+		if nlines == 0: il = -1 # no line detected in region
 		while fails < max_fails: # add a line at a time
 			il += 1
 			addaline(paras, il, lam, flux, int(len(lam)/2), continuum=continuum)
@@ -159,7 +164,6 @@ def fit_region(lam, flux, noise, ipeaks, continuum=1., addline=True):
 				print('fail')
 
 	flux_fit = gs.form_spec(continuum, multivoigt_paras(fitresult.params, lam), voigt_is_tau=voigt_is_tau)
-	plot = 0
 	if plot:
 		plt.plot(lam, flux_fit, 'r', lw=0.5)
 		plt.plot(lam, flux_guess, 'b', lw=0.5)
@@ -184,11 +188,12 @@ def results2initparray(results): return paras2parray([result.initparams for resu
 def pfile2parray(pfile): return results2parray(pkloadgzip(pfile))
 def pfile2flux(pfile, lam, continuum=1.): return gs.parray2flux(pfile2parray(pfile), lam, continuum, voigt_is_tau=voigt_is_tau, v1d=v1d)
 
-def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut=1.5, plot=False, chkind=False, verbose=True):
+def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut=1.5, plot=False, chkind=False, verbose=True, gapranges=None):
 	'''
 	Spectrum should be normalized to [0,1]
 	addline - whether try to add lines after fit
 	chkind - whether to return region_indlims from find_regions
+	gapranges - [[lamleft, lamright], ...] if there are gaps in the input spec, fill them in with random lines drawn from existing distribution
 	'''
 	# ----------- divide spectra to regions -----------
 	tosave_findreg = tosave[:tosave.rfind('.')] + '_findreg' + tosave[tosave.rfind('.'):]
@@ -226,12 +231,13 @@ def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut
 				flux_reg = np.ma.masked_where(flux_reg < 0., flux_reg) # mask negative values
 				noise_reg = noise[start:end]
 				ipeaks_reg = region_indpks[ireg]
-				if len(ipeaks_reg) == 0: continue
+				nlines = len(ipeaks_reg)
+				if (nlines == 0) and (not addline): continue
 				#         fit continuum
 				#ppoly = fit_poly([lam_reg, flux_reg], poly_deg=3)
 				#continuum = np.polyval(ppoly, lam_reg)
 				#         fit line
-				print('Fitting %d lines for region %d/%d ...'%(len(ipeaks_reg),ireg+1,len(region_indlims)))
+				print('Fitting %d lines for region %d/%d ...'%(nlines, ireg+1, len(region_indlims)))
 				t2 = time.time()
 				result_reg = fit_region(lam_reg, flux_reg, noise_reg, ipeaks_reg, continuum=continuum, addline=addline)
 				print('%.2f minutes. Total %.2f minutes.'%((time.time()-t2)/60., (time.time()-t1)/60.))
@@ -250,26 +256,28 @@ def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut
 	# ----------- analysis -----------
 	if plot: # plot fitted flux
 		bestp_tot_arr = results2parray(results)
+		'''
+		import sse_lya_sims_zlines_27jun2019_steve as sse
 		lam0, al, fl, fg = bestp_tot_arr
 		al_cut = -1.2
 		fg_cut = dvel2dlam(20., lam0) # AA
-		import sse_lya_sims_zlines_27jun2019_steve as sse
 		fv_intrin, fv_para = sse.intrinsic_fwhm(fl, fg, lam0, sse.smooth)
 		fwhm_intrin = dlam2dvel(fv_intrin, lam0)
 		fwhm_para = dlam2dvel(fv_para, lam0)
 		fwhm_cut = 20. # km/s
+		'''
 		initp_tot_arr = results2initparray(results)
 		flux_fit = gs.parray2flux(bestp_tot_arr, lam, continuum=continuum, voigt_is_tau=voigt_is_tau, v1d=v1d)
 		flux_guess = gs.parray2flux(initp_tot_arr, lam, continuum=continuum, voigt_is_tau=voigt_is_tau, v1d=v1d)
 		#    plot fitted spec
-		lam = obs_frame(lam, sse.z)
-		plt.figure(figsize=(12,3))
-		plt.axhline(1,color='k') # continuum
-		plt.plot(lam, flux, 'k.', ms=3)#, lw=0.5)
-		plt.plot(lam, flux_fit, 'r')
-		#plt.plot(lam, flux_guess, 'b', lw=0.5)
-		#plt.plot(lam, flux - flux_fit - 0.5, 'k', lw=0.5) # residuals
-		#plt.axhline(-0.5,color='k',lw=0.5) # residual zero-points
+		fig, ax = plt.subplots(figsize=(12,3))
+		ax.axhline(1,color='k') # continuum
+		ax.plot(lam, flux, 'k.', ms=3)#, lw=0.5)
+		ax.plot(lam, flux_fit, 'r')
+		ax.set_ylim([-0.5, 1.5])
+		#ax.plot(lam, flux_guess, 'b', lw=0.5)
+		#ax.plot(lam, flux - flux_fit - 0.5, 'k', lw=0.5) # residuals
+		#ax.axhline(-0.5,color='k',lw=0.5) # residual zero-points
 		#    plot linewidth hist
 		'''
 		plt.figure()
@@ -280,10 +288,9 @@ def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut
 		print('median observed line width: %.2f km/s'%np.median(fwhm_para))
 		plt.xlabel('line width FWHM (km/s)')
 		'''
-		plt.axis([4800.,5000.,-0.1,1.1])
-		plt.xlabel('$\lambda$ ($\AA$)')
-		plt.ylabel('Normalized flux')
-		plt.tight_layout()
+		ax.set_xlabel('$\lambda$ ($\mathrm{\AA}$)')
+		ax.set_ylabel('Normalized flux')
+		fig.tight_layout()
 
 	if chkind: return results, region_indlims
 	else: return results
@@ -292,22 +299,92 @@ if __name__ == '__main__':
 	### generate test spectra
 	#lam, flux, noise = generate_test_spec(nlines=50)
 	### use keck spectra
-	from norm_koa import koa_normed_spec
-	from continuum_fit import get_keck_spec
-	import sse_lya_sims_zlines_27jun2019_steve as sse
-	ind = int(sse.saveid[:2])
-	#koa_spec = koa_normed_spec(ind)
-	koa_spec = get_keck_spec(ind, local_dist=sse.fitcont_dist, poly_deg=sse.fitcont_deg, fitcont_mode=sse.fitcont_mode)
-	lam = koa_spec[0]; flux = koa_spec[1]; noise = koa_spec[2]
+	import continuum_fit as cf
+	import generate_spec as gs
+	import read_elqs as re
+	import read_ps as rp
+	top10 = re.top10m14
+
+	# check nlines
 	'''
-	plt.axhline(1,c='k')
-	plt.plot(lam,flux)
-	plt.show()
+	percentage = np.zeros([len(top10), 2]) # real_nlines/sim_nlines
+	nlines = np.zeros([len(top10), 2])
+	increase = []
+	for ind,item in enumerate(top10.iloc):
+		zqso = item['z']
+		kid = item['KOAjobID']
+		print('%6d'%kid, 'z = %.3f'%zqso, end=', ')
+		sim_nlines = gs.nlines(zqso, random=False)
+		print('theory nlines = %5d'%sim_nlines, end=', ')
+		for vfaddline in [False, True]:
+			addlinetxt = '_fitaddline' if vfaddline else ''
+			print('addline = %d'%(vfaddline), end=', ')
+			pfile = path + 'paras/voigtforest_bestparray_%d_smooth30pix_dist100_degNone%s_CSLcut1.5.pzip'%(kid, addlinetxt)
+			parray = pkloadgzip(pfile, verbose=False)
+			if vfaddline: n_noadd = nl
+			nl = parray.shape[1]
+			nlines[ind, int(vfaddline)] = nl
+			pct = nl/sim_nlines*100.
+			percentage[ind, int(vfaddline)] = pct
+			print('nlines = %5d (%2d%%)'%(nl, pct), end=', ')
+			if vfaddline: 
+				inc = (nl - n_noadd)/n_noadd*100.
+				increase.append(inc)
+				print('(%2d%% increase)'%(inc), end=', ')
+		print('')
+	print('average nlines: noaddline %.1f, addline %.1f'%tuple(np.mean(nlines, axis=0)))
+	print('average percentage: noaddline %2d%%, addline %2d%%'%tuple(np.mean(percentage, axis=0)), '(%2d%% increase)'%np.mean(increase))
 	'''
 
-	# fit or load voigt parameters
-	plot = 1
-	results = fit_forest(lam, flux, noise, tosave=sse.voigtforest_pfile, addline=sse.fitaddline, CSLcut=sse.CSL_cut, plot=plot)
-	tosave = path + 'plots/voigtforest_spec_%s.pdf'%sse.saveid
-	#plt.savefig(tosave);print('Saved:%s'%tosave)
-	#plt.show()
+	# plot figure
+	rest_frame = True # if plot in rest frame
+	vfaddline = True
+	addlinetxt = '_fitaddline' if vfaddline else ''
+	#for item in top10.iloc:
+	if 1:
+		#item = df_all.loc[12850]
+		kid = 36576
+		item = rp.top10vds_N[rp.top10vds_N.KOAjobID==kid].iloc[0]
+		koa_spec = cf.get_keck_spec(item) # in rest frame
+		lam, kflux, knoise = koa_spec
+
+		# voigtfit
+		vffile = path + 'paras/voigtforest_bestp_%d_smooth30pix_dist100_degNone%s_CSLcut1.5.pzip'%(item['KOAjobID'], addlinetxt)
+		results = fit_forest(*koa_spec, tosave=vffile, addline=vfaddline, plot=False)
+		parray_vf = results2parray(results)
+		flux_vf = gs.parray2flux(parray_vf, lam, v1d=gs.voigt1d)
+
+		# generate_spec
+		zqso = item['z']
+		blgNHIz_file = path + 'paras/blgNHIz_zqso%.3f.pickle'%(zqso)
+		parray_gen = gs.bNHIz_generator(zqso, blgNHIz_file, rest_frame=rest_frame)
+		flux_gen = gs.parray2flux(parray_gen, lam, v1d=gs.voigt1d)
+
+		# plot voigtfit and genspec
+		fig, axes = plt.subplots(2, 1, figsize=(12, 5), sharex=True, gridspec_kw={'hspace':0})
+
+		# plot voigtfit
+		axes[0].axhline(1, color='k')
+		axes[0].plot(lam, kflux, 'k.', ms=3)
+		axes[0].plot(lam, flux_vf, 'r')
+		axes[0].set_ylim([-0.4, 1.4])
+		axes[0].set_ylabel('Real spectrum')
+
+		# plot genspec
+		axes[1].axhline(1, color='k')
+		axes[1].plot(lam, flux_gen, 'r')
+		axes[1].set_ylim([-0.4, 1.4])
+		axes[1].set_xlim([1100., 1150.])
+		axes[1].set_xlabel('Rest frame wavelength ($\mathrm{\AA}$)')
+		axes[1].set_ylabel('Simulated spectrum')
+
+		# add x axis showing observed frame wavelength
+		axp = axes[0].twiny()
+		lamlim_obsframe = su.obs_frame(np.array(axes[0].get_xlim()), zqso)
+		axp.set_xlim(lamlim_obsframe)
+		axp.set_xlabel('Observed frame wavelength ($\mathrm{\AA}$)')
+
+		fig.tight_layout()
+		tosave = path + 'plots/voigtforest2genspec_%d%s.pdf'%(item['KOAjobID'], addlinetxt)
+		fig.savefig(tosave);print('Saved:%s'%tosave)
+		plt.show()

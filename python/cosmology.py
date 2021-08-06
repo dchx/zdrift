@@ -35,6 +35,13 @@ def dz2dv(dz, z):
 	dv =  c.c.to('cm s-1').value * dz / (1. + z)
 	return dv
 
+def dv2dz(dv, z):
+	'''
+	dv - in cm s-1
+	'''
+	dz = (1. + z) * dv / c.c.to('cm s-1').value
+	return dz
+
 def dvdt(z, cosmo=cosmology.Planck15):
 	'''
 	LCDM model
@@ -43,12 +50,11 @@ def dvdt(z, cosmo=cosmology.Planck15):
 	dz = dzdt(z, cosmo)
 	return dz2dv(dz, z)
 
-def dxs_2nd_epoch(lam0, period=10., shiftmode='dz', cosmo=cosmology.Planck15):
+def dxs_2nd_epoch(zs, period=10., shiftmode='dz', cosmo=cosmology.Planck15):
 	'''
-	Return a series of dzs corresponding to lam0s (line center parameters) with period time
+	Return a series of dzs corresponding to zs (line center parameters) with period time
 	period - (year) time between two epochs
 	'''
-	zs = lam2z(lam0)
 	dzs = dzdt(zs, cosmo) * period
 	if 'dz' in shiftmode: return dzs
 	elif 'dv' in shiftmode: return dz2dv(dzs, zs)

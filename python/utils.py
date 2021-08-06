@@ -1,13 +1,21 @@
 from __future__ import division
 from __future__ import print_function
 import matplotlib
-matplotlib.rc('font',size=5) # global font size
-import time,datetime,copy
+matplotlib.rc('font',size=12, family='serif') # global font size
+matplotlib.rc(('xtick', 'ytick'), direction='in') # axis tick direction
+matplotlib.rc('xtick', top=True)
+matplotlib.rc('ytick', right=True)
+matplotlib.rc(('xtick.major', 'ytick.major'), size=6)
+matplotlib.rc(('xtick.minor', 'ytick.minor'), size=3)
+import os, glob, pickle, gzip, sys, itertools, warnings, time, datetime, copy, math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+#plt.tick_params(which='major', length=6)
+#plt.tick_params(which='minor', length=3)
 from astropy.io import fits
-import os,glob,pickle,gzip,sys,itertools
+import astropy.io.ascii as asc
+import astropy.table as tb
 if sys.version_info.major == 3: from importlib import reload
 from skimage.feature.peak import peak_local_max
 import astropy.units as u
@@ -20,41 +28,7 @@ from astropy import cosmology
 #path = '/Users/dong/Documents/Research/zdrift/spec_sim/'
 #path = '/Volumes/SeagateBlack/temple_20200313/zdrift/spec_sim/'
 path = os.path.dirname(os.path.realpath(os.path.dirname(__file__))) + '/' # python/.. -> spec_sim/
-lya_wave = 1215.67 # Angstrom
-lyb_wave = 1025.72 # Angstrom
 keck_catalog = 'elqs' # '.', 'elqs' or 'brightest'
-def nu2aa(nu): return c.c.value / nu * 1e10
-def aa2nu(aa): return c.c.value / aa * 1e10
-lya_freq = aa2nu(lya_wave) # s-1
-
-def rest_frame(lam_obs, z):
-	# input observed wavelengths lam_obs, provide redshift z
-	# output rest frame wavelengths
-	lam_emit = lam_obs/(1.+z)
-	return lam_emit 
-
-def obs_frame(lam_emit, z):
-	# input rest frame wavelengths lam_emit, provide redshift z
-	# output observed wavelengths
-	lam_obs=lam_emit*(1.+z)
-	return lam_obs
-
-def lam2z(lam):
-	'''
-	convert a series of wavelengths (lam) in a Lya forest to redshifts of clouds on the path
-	assuming lam in observed frame
-	'''
-	zs = lam / lya_wave - 1.
-	return zs
-
-def rest_fram_pars(redsft,plot_rest_frame=True):
-	if plot_rest_frame: 
-		z_plot_rest_frame=redsft #redshift if plot in rest frame, else zero
-		lya_toplot=lya_wave # lya 1215.67 Angstrom
-	else: 
-		z_plot_rest_frame=0.
-		lya_toplot=obs_frame(lya_wave,redsft)
-	return z_plot_rest_frame,lya_toplot
 
 def expand_plt_range(range0,factor=0.1):
 	# expand the axis range by factor on each side
@@ -95,16 +69,27 @@ def recarr2csv(recarr):
 	for line in recarr: outstr+='\r'+','.join([str(col) for col in line])
 	return outstr
 
+df_sdss = pd.read_csv(path+'Table1_Keck_addKOAjobID.csv')
+df_elqs = pd.read_csv(path+'data/elqs_full_sortM1450_addmore.csv')
+#df_elqs_ps = pd.read_csv(path+'data/elqs_panstarrs_table7_concise.dat',sep='\s+') # pan-starrs elqs catalog
+df_elqs_ps = pd.read_csv(path+'data/elqs_panstarrs_table7_concise.csv') # pan-starrs elqs catalog
+df_all = pd.read_csv(path + 'elqs_and_sdss_allwithKOAjobID.csv') # all available good data (both elqs and sdss), considering duplicates
+df_all = df_all.set_index(df_all.KOAjobID)
+#southern = pd.read_csv(path + 'data/Boutsia2020_table3_apjsabafc1t3_ascii.txt', sep='\s+', comment='#')
+southern = pd.read_csv(path + 'data/Boutsia2020_table3_apjsabafc1t3_ascii.csv')
 def get_matched(keck_catalog):
-	if keck_catalog == '.':
-		d = pd.read_csv(path+'Table1_Keck_addKOAjobID.csv')
+	if keck_catalog == '.' or keck_catalog == 'sdss':
+		d = df_sdss
 		#matched=csv2recarr(path+'Table1_matched.csv') # table1 keck csv file
-		matched = d.to_records(index=False)
 	elif keck_catalog == 'elqs':
-		d = pd.read_csv(path+'data/elqs_full_sortM1450_addmore.csv')
-		matched = d.to_records(index=False)
+		d = df_elqs
+	elif keck_catalog == 'ps-elqs':
+		d = df_elqs_ps
+	elif keck_catalog == 'Boutsia20':
+		d = southern
+	else: raise Exception("keck_catalog not recognized")
+	matched = d.to_records(index=False)
 	return d, matched
-
 d, matched = get_matched(keck_catalog)
 
 def saveid_func(i): return '%02d_%03d'%(i,matched['No'][i])
@@ -121,118 +106,44 @@ def num2koajobid(num):
 	# int int
 	return matched['KOAjobID'][matched['No']==num][0]
 
-def cut_lya(spec,lya_toplot,searchrange=50.,adjust_ind=-10,searchlya=False):
-	# spec: (lam,flux,flux_err(,disp,exptime))
-	# searchrange: search lya peak at (lya-searchrange,lya+searchrange), in Angstrom
-	# return only lya forest spectrum
-	# adjust_ind: how many more values to the right of lya peak
-	lam=spec[0]
-	flux=spec[1]
-
-	# search for lya peak
-	if searchlya:
-		therange=[lya_toplot-searchrange,lya_toplot+searchrange]
-		searchindex=np.where((lam>therange[0])*(lam<therange[1]))[0]
-		if len(searchindex)==0: raise ValueError("No Lya in the spectrum.")
-		lyaindex=searchindex[np.argmax(flux[searchindex])]
-		foundlya=lam[lyaindex]
-	else:
-		cuttedind=np.where(lam<lya_toplot)[0]
-		if len(cuttedind)==0: lyaindex=0
-		else: lyaindex=cuttedind[-1]
-
-	if (lyaindex+1)==len(lam): right_edge=len(lam)
-	else: right_edge=np.min([len(lam),(lyaindex+adjust_ind)])# right wave index to cut
-	newspec=[]
-	for ispec in range(len(spec)): newspec.append(spec[ispec][:right_edge]) # do cut
-	newspec=tuple(newspec)
-	if searchlya: return newspec, foundlya
-	else: return newspec
-
-def fit_poly(spec, local_dist=5, poly_deg=4):
-	'''
-	spec: lam, flux, flux_err(, disp, exptime)
-	local_dist: min_distance for peak_local_max
-	'''
-	lam=spec[0]
-	flux=spec[1]
-
-	# use only local max
-	ipeak=peak_local_max(flux,min_distance=local_dist).flatten()
-	if len(ipeak)==0: ipeak=list(range(len(lam))) # can't find local max: use whole spec
-	lam_topoly=lam[ipeak]
-	flux_topoly=flux[ipeak]
-
-	ppoly=np.polyfit(lam_topoly,flux_topoly,poly_deg)
-	return ppoly
-
-def cut_spec(spec,lamlim):
-	'''
-	cut a spec [lam, flux, ...] with lamlim [min, max]
-	'''
-	spec=np.array(spec)
-	initial_dim=len(spec.shape)
-	spec=np.atleast_2d(spec)
-	specut=spec.T[(spec[0]>=lamlim[0])*(spec[0]<=lamlim[1])].T
-	if specut.shape[0]==1 and initial_dim==1: specut=np.squeeze(specut,axis=0) # if spec has only lam
-	return specut
-
-def connect_chunks(specs):
-	'''
-	connect chunked spectra to one
-	------
-	Input specs: [(lam, flux, flux_err, ...), (lam, flux, flux_err, ...), ...]
-	Output connected_spec: [lam, flux, flux_err, ...] connected
-	'''
-	connected_spec = []
-	for idim in range(len(specs[0])): # loop through lam, flux, ...
-		connected_dim = []
-		for chunk in specs: connected_dim.append(chunk[idim]) # loop through chunks
-		connected_spec.append(np.hstack(connected_dim))
-	indsortlam = np.argsort(connected_spec[0])
-	for idim in range(len(connected_spec)): connected_spec[idim] = connected_spec[idim][indsortlam] # sort by lam
-	return connected_spec
-
-def add_shot_noise(flux, nphot, sky=1e-12, return_error=False):
-	'''
-	flux should be normalized to [0, 1]
-	sky - value in [0, 1], squeezes the spectrum to [sky, 1]
-	'''
-	if nphot==np.inf: # no error
-		flux_werr = flux
-		error = np.zeros(flux.shape)
-	else:
-		flux_nphot = (flux + sky) / (1. + sky) * nphot
-		err_nphot = flux_nphot**0.5
-		#print('flux percentage error after adding noise:', np.mean(np.abs(err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)))/flux_nphot))
-		#flux_nphot=flux_nphot+err_nphot*np.random.normal(0.0,1.0,len(flux_nphot)) # use normal with sigma=sqrt(flux_nphot)
-		flux_nphot_werr = np.random.poisson(flux_nphot) # use poisson
-		flux_werr = flux_nphot_werr / float(nphot) * (1. + sky) - sky
-		error = err_nphot / float(nphot)
-	if return_error: return flux_werr, error
-	else: return flux_werr
-
 def pkdump(data, pfile, verbose=True):
+	'''
+	for .pickle files
+	'''
 	with open(pfile,'wb') as f:
 		if sys.version_info.major == 2: pickle.dump(data, f)
 		if sys.version_info.major == 3: pickle.dump(data, f, protocol=2)
 	if verbose: print('Saved:%s'%pfile)
 
 def pkload(pfile, verbose=True):
+	'''
+	for .pickle files
+	'''
 	if sys.version_info.major == 2: 
 		with open(pfile, 'r') as f: results = pickle.load(f)
 	if sys.version_info.major == 3:
-		with open(pfile, 'rb') as f: results = pickle.load(f, encoding='latin1')
-	if verbose: print('Loaded:%s'%pfile)
+		with open(pfile, 'rb') as f:
+			try: results = pickle.load(f, encoding='latin1')
+			except Exception as e:
+				print('Error in %s'%pfile)
+				raise e
+	if verbose:
+		print('Loaded:%s'%pfile)
 	return results
 
 def pkdumpgzip(data, pfile, verbose=True):
+	'''
+	for .pzip files
+	'''
 	with gzip.open(pfile,'wb') as f:
 		if sys.version_info.major == 2: pickle.dump(data, f)
 		if sys.version_info.major == 3: pickle.dump(data, f, protocol=2)
 	if verbose: print('Saved:%s'%pfile)
 	
 def pkloadgzip(pfile, verbose=True):
+	'''
+	for .pzip files
+	'''
 	with gzip.open(pfile,'r') as f:
 		if sys.version_info.major == 2: results = pickle.load(f)
 		if sys.version_info.major == 3: results = pickle.load(f, encoding='latin1')

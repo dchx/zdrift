@@ -1,16 +1,11 @@
 from utils import *
+from spec_utils import *
+import spec_utils as su
 from itertools import groupby
 from operator import itemgetter
-from scipy.signal import gaussian
 
 #smoothwidth=5 # before 10/28/2019: smoothwidth=50; 10/28: 10; 10/29: 5
 smoothwidth=2 # (pixel) =2sigma for gaussian
-
-def flux_smooth(flux,width):
-	# smooth flux with 2-sigma width (in pixels)
-	w = np.ones(int(round(width))) # flat kernel
-	w = gaussian(int(round(width*4.)), width/2.) # 4-sigma range
-	return np.convolve(w/w.sum(),flux,mode='same')
 
 def lamflux_from_table(table,z_plot_rest_frame=0.,lya_tocut=None,smooth=True):
 	# return lam, flux, flux_err, disp from koa data table, after spectrum prior filtering 
@@ -40,7 +35,7 @@ def lamflux_from_table(table,z_plot_rest_frame=0.,lya_tocut=None,smooth=True):
 		for i in range(len(out)): out[i]=out[i][crit]
 	# smoothing
 	if smooth and len(out[0])!=0:
-		out[1]=flux_smooth(out[1],smoothwidth) #flux
+		out[1]=su.flux_smooth(out[1],smoothwidth) #flux
 		crit=(np.arange(len(out[0]))>=smoothwidth/2.)*(np.arange(len(out[0]))<len(out[0])-smoothwidth/2.) # cut off edge pixels
 		for i in range(len(out)): out[i]=out[i][crit]
 	return tuple(out)
@@ -49,10 +44,10 @@ def sort_lamlim(specs):
 	'''
 	sort specs by lam_min of each spec
 	'''
-	lamlims=np.array([[np.min(spec[0]),np.max(spec[0])] for spec in specs]) #[[lam_min,lam_max],[lam_min,lam_max],...]
-	argsortLamMin=np.argsort(lamlims.T[0],axis=0) # sort by lam_min
-	sortedSpecs=np.array(specs)[argsortLamMin] # sorted by lam_min
-	sortedLamlims=lamlims[argsortLamMin]
+	lamlims = np.array([[np.min(spec[0]),np.max(spec[0])] for spec in specs]) #[[lam_min,lam_max],[lam_min,lam_max],...]
+	argsortLamMin = np.argsort(lamlims.T[0], axis=0) # args sort by lam_min, size:len(specs)
+	sortedSpecs = [specs[ind] for ind in argsortLamMin] # sorted by lam_min
+	sortedLamlims = lamlims[argsortLamMin]
 	return sortedSpecs,sortedLamlims
 
 def cut_repeat_wave(specs):
@@ -149,6 +144,47 @@ def cut_wave_by_snr(specs):
 	sortedSpecs=[spec for spec in sortedSpecs if len(spec[0])>1] # filter 0-length spec
 	return sortedSpecs
 
+def files2tables(files, z_plot_rest_frame=0., cut_lya=False, smoothwidth=2):
+	'''
+	New version of appendtable() and lamflux_from_table()
+	return [array, array, ...] each array[lam, flux, flux_err, disp] for one flux file
+	smoothwidth - in pixel. if 0, not smooth
+	'''
+	tables = []
+	for f in files:
+		data = asc.read(f)
+		# get dispersion
+		f_arcid = os.path.abspath(os.path.dirname(f)+'/../arcids/'+os.path.basename(f).replace('_flux','_arcids'))
+		try:
+			arcid_data = asc.read(f_arcid)
+			disp = np.polyval(np.polyfit(arcid_data['col_cen'], arcid_data['disp'], 3), data['col']) # fit polynomial to disp-col_cen relation and extrapolate -> disp
+		except FileNotFoundError:
+			print('Arcid file not found, using wavelength gradient as disp:', f_arcid)
+			disp = np.gradient(data['wave'])
+		data.add_column(disp, name='disp')
+		# output table
+		outtable = data[['wave', 'Flux', 'Error', 'disp']]
+		# adjustments
+		outtable.sort('wave') # sort lam
+		outtable = outtable[outtable['Error']>=0.] # flux error >= 0
+		outtable = outtable[outtable['wave']>0.] # lam > 0
+		# if in rest frame
+		outtable['wave'] = rest_frame(outtable['wave'], z_plot_rest_frame) #lam
+		# cut lyaforest
+		if cut_lya:
+			lya_tocut = su.obs_frame(su.lya_wave, z_plot_rest_frame)
+			outtable = outtable[outtable['wave'] <= lya_tocut]
+		# smoothing
+		npixel = len(outtable)
+		if smoothwidth!=0 and npixel!=0:
+			outtable['Flux'] = su.flux_smooth(outtable['Flux'], smoothwidth) #flux
+			#crit = (np.arange(npixel) >= smoothwidth/2.) & (np.arange(npixel) < (npixel - smoothwidth/2.)) # cut off edge pixels
+			#outtable = outtable[crit]
+		# appending outarray
+		outarray = outtable.to_pandas().to_numpy().T # [lam, flux, flux_err, disp]
+		tables.append(outarray)
+	return tables
+
 def appendtable(files, stackchan=0, z_plot_rest_frame=0.,lya_tocut=None, smooth=True):
 	# OUTPUT
 	#   (lam,flux,flux_err, disp,exptime) if stachan else [(lam,flux,flux_err, disp,exptime),(lam,flux,flux_err, disp,exptime), ... ]
@@ -190,9 +226,25 @@ def multiargmax(thelist):
 	themax=np.max(thelist)
 	return np.where(thelist==themax)[0]
 
+def filter_files_nowave(files):
+	files = list(files)
+	i = 0
+	while i < len(files):
+		f = files[i]
+		data = asc.read(f)
+		if data['wave'].max()<0:
+			files.pop(i)
+			i -= 1
+		del data
+		i += 1
+	files = np.array(files)
+	return files
+
 def koa_filelist(koajobid,type='tbl', keck_catalog=keck_catalog):
+	if keck_catalog=='sdss': keck_catalog = '.'
 	toglob = path+'data/Keck/' + keck_catalog + '/KOA_%d/HIRES/extracted/tbl/ccd*/flux/*.tbl'%koajobid
 	files = np.array(glob.glob(toglob))
+	files = filter_files_nowave(files)
 	# observation ids
 	ids = [] # like 20051028.26873_3_03, for every file
 	koaid_ccds = [] # like 20051028.26873_3, for every file
@@ -267,6 +319,24 @@ def read_koa_jobid(koajobid,stackchan=0,z_plot_rest_frame=0.,lya_tocut=None,smoo
 		else: files=files_filegroups
 		return appendtable(files, stackchan=stackchan, z_plot_rest_frame=z_plot_rest_frame,lya_tocut=lya_tocut,smooth=smooth) # list or tuple
 
+def read_koa_df(item, rest_frame=True, cut_lya=False, smoothwidth=2):
+	'''
+	New function to read Keck data, using pd.DataFrame item. New version of continuum_fit.trim_koaspec()
+	show one observation (koaid) (with most ccds and file size)
+	return - lam, flux, error, disp
+	'''
+	z_plot_rest_frame = item['z'] if rest_frame else 0.
+	koajobid = item['KOAjobID']
+	catalog = item['catalog']
+	if catalog=='sdss': catalog = '.'
+	filegroups = koa_filelist(koajobid, type='oneobs', keck_catalog=catalog) # [array([same ccd]) same obs date (koaid)]
+	if len(filegroups)==0: print(koajobid, ': table file not found'); return
+	files = np.hstack(filegroups) # array([same obs date (koaid)])
+	arrs = files2tables(files, z_plot_rest_frame=z_plot_rest_frame, cut_lya=cut_lya, smoothwidth=smoothwidth) # [array, array, ...] each array[lam, flux, err, disp] for one flux file
+	arrs = cut_wave_by_snr(arrs) # [array, ...] without duplicate lam
+	arr = su.connect_chunks(arrs)
+	return arr
+
 def make_spec_plot(lam,flux,ax):
 	lines=ax.plot(lam,flux,lw=0.5)
 	return lines
@@ -289,6 +359,7 @@ def get_res(koajobid, keck_catalog=keck_catalog):
 	return the resolution with maximum number of fitsfiles
 	and the list of koaids for that resolution
 	'''
+	if keck_catalog=='sdss': keck_catalog = '.'
 	koaid = koa_filelist(koajobid,type='oneobsids', keck_catalog=keck_catalog)[0][:-2]
 	fitsfile = path+'data/Keck/' + keck_catalog + '/KOA_%d/HIRES/raw/sci/HI.%s.fits'%(koajobid,koaid)
 	head = fits.getheader(fitsfile)
