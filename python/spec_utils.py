@@ -1,6 +1,6 @@
 from utils import *
 import itertools
-from scipy.signal import gaussian
+from scipy.signal.windows import gaussian
 
 def nu2aa(nu): return c.c.value / nu * 1e10
 def aa2nu(aa): return c.c.value / aa * 1e10
@@ -253,13 +253,13 @@ def add_datapoint(spec_sparse, spec_dense, toadd):
 	for item in toadd:
 		if np.array(item).size==1: # item==lam0
 			lamdiff = np.abs(lam_dense - item)
-			if min(lamdiff) > 1.: break # no lam_dense close to item (lam0)
+			if min(lamdiff) > 1.: continue # no lam_dense close to item (lam0)
 			ind = np.argmin(lamdiff)
 			lam_sparse = np.append(lam_sparse, lam_dense[ind])
 			flux_sparse = np.append(flux_sparse, flux_dense[ind])
 		else: # item==[lam0, flux0]
 			lamdiff = np.abs(lam_dense - item[0])
-			if min(lamdiff) > 1.: break # no lam_dense close to item (lam0)
+			if min(lamdiff) > 1.: continue # no lam_dense close to item (lam0)
 			lam_sparse = np.append(lam_sparse, item[0])
 			flux_sparse = np.append(flux_sparse, item[1])
 	spec_sparse = np.array([lam_sparse, flux_sparse])

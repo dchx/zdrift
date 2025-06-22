@@ -530,7 +530,7 @@ if __name__ == '__main__':
 	#plt.plot(lam,flux_wnoise,lw=0.5)
 	plt.plot(lam,flux,'r')
 	plt.axis([4800.,5000.,-0.1,1.1])
-	plt.xlabel('$\lambda$ ($\AA$)')
+	plt.xlabel(r'$\lambda$ ($\AA$)')
 	plt.ylabel('Normalized flux')
 	plt.tight_layout()
 	tosave = path + 'plots/generate_spec_zqso%.3f.pdf'%zqso

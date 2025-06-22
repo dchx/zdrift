@@ -66,27 +66,32 @@ top10vds_S_nosub = df_merged_S.sort_values('dvdtosig', ascending=False)[:10]
 top10m14_N_nosub = df_merged_N.sort_values('M1450')[:10]
 top10m14_S_nosub = df_merged_S.sort_values('M1450')[:10]
 
-def top10vds_N_df():
+def top10_cont_sub_df(top10_nosub):
 	'''
-	continuum substitution for top10 vds north, using generate_spec
+	continuum substitution for top10 vds/top5 m14 north, using generate_spec
 	'''
 	dic = {'APM 08279+5255': 29524, 'PS1 J212540.96-171951.4': 36576, 'SDSS J034151.16+172049.7': 54447, 'PSS J1723+2243': 104297, 'SDSS J161737.78+595020.1': 12850, 'PS1 J052136.92-133938.8': 20463, 'SDSS J164804.84+493326.7': 2315} # {Name: KOAjobID}, if not in dic, use self
 	colnames = ['RA', 'DEC', 'z', 'M1450', 'KOAjobID', 'catalog', 'SDSS', 'z_origin', 'M1450_origin', 'Name']
-	top10vds_N = pd.DataFrame(columns=colnames)
-	for item in top10vds_N_nosub.iloc: # loop through origin targets
+	top10_withsub = pd.DataFrame(columns=colnames)
+	#for item in top10_nosub.iloc: # loop through origin targets
+	for ind in range(len(top10_nosub)): # loop through origin targets
+		item = top10_nosub.iloc[ind]
 		name = item['Name']
 		if name=='SDSS J095937.11+131215.5': # use sdss continuum
 			toappend = pd.DataFrame(item[['RA', 'DEC', 'z', 'M1450', 'KOAjobID', 'SDSS', 'Name']]).T
+			toappend.set_index(pd.Int64Index([ind + 1]), inplace=True)
 		else:
 			if name in dic.keys(): koajobid = dic[name]
 			else: koajobid = item['KOAjobID']
 			toappend = df_all[['RA', 'DEC', 'z', 'M1450', 'KOAjobID', 'catalog', 'SDSS', 'Name']][df_all['KOAjobID']==koajobid]
+			toappend.rename(index={koajobid: ind + 1}, inplace=True) # change index to rank
 		toappend['z_origin'] = item['z']
 		toappend['M1450_origin'] = item['M1450']
-		top10vds_N = pd.concat([top10vds_N, toappend])
-	top10vds_N = top10vds_N.set_index(pd.RangeIndex(1, 11))
-	return top10vds_N
-top10vds_N = top10vds_N_df()
+		top10_withsub = pd.concat([top10_withsub, toappend])
+	#top10_withsub = top10_withsub.set_index(pd.RangeIndex(1, len(top10_withsub) + 1)) # change index to rank
+	return top10_withsub
+top10vds_N = top10_cont_sub_df(top10vds_N_nosub)
+top10m14_N = top10_cont_sub_df(top10m14_N_nosub)
 
 def plot_mags():
 	tocmp = ['dvdtosig', 'rmag', 'e_rmag', 'z', 'M1450']

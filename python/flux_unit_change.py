@@ -31,6 +31,7 @@ def flux2nphot(lam, flux, aperture, exptime, efficiency=1., disp=None):
 	if np.any(disp): 
 		if type(disp)!=u.Quantity: disp *= u.AA
 	else: disp = np.gradient(lam) # dispersion in AA (per pixel)
+	#print('disp min mean max: %.4f %.4f %.4f'%(np.min(disp).value, np.mean(disp).value, np.max(disp).value))
 	area = (np.pi * (aperture/2.)**2.).to('cm2') # telescope area
 	Ephot = (c.h * c.c / lam).to('erg') # electron energy
 

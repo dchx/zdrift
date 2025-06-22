@@ -1,6 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 import matplotlib
+matplotlib.use('Agg')
 matplotlib.rc('font',size=12, family='serif') # global font size
 matplotlib.rc(('xtick', 'ytick'), direction='in') # axis tick direction
 matplotlib.rc('xtick', top=True)

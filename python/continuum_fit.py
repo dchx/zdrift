@@ -46,14 +46,14 @@ def contpar2cont(contpar, mode, lam):
 	if mode=='poly': return np.polyval(contpar, lam)
 	else: return interpolate.interp1d(*contpar, mode, fill_value='extrapolate')(lam)
 
-def fit_continuum(lam, flux, local_dist=100, poly_deg=10, mode='poly', plot=False, figaxes=None, contpar_tosave=None, spec_nosmooth=None, ppoly_ratio=[1.], args=None, autodeg=True):
+def fit_continuum(lam, flux, local_dist=100, poly_deg=None, mode='poly', plot=False, figaxes=None, contpar_tosave=None, spec_nosmooth=None, ppoly_ratio=[1.], args=None):
 	'''
 	local_dist: min_distance for peak_local_max in pixel
 	mode: poly, linear or cubic
 	figaxes: if not None, use these to plot, else create fig
 	args - args class for masking and adding points
 	spec_nosmooth - only used in plotting
-	autodeg - whether to automatically set poly_deg
+	poly_deg - degree for polynomial fit. if None, automatically set poly_deg
 	'''
 	#flux = su.flux_smooth(flux, width=10) # width in pixels
 	ipeak = np.sort(np.r_[0,peak_local_max(flux,min_distance=local_dist).flatten()])
@@ -71,7 +71,7 @@ def fit_continuum(lam, flux, local_dist=100, poly_deg=10, mode='poly', plot=Fals
 	# fit polynomial
 	if mode=='poly':
 		npoints = len(lam_tofit)
-		if autodeg: poly_deg = npt2deg(npoints) # redefine poly_deg
+		if poly_deg is None: poly_deg = npt2deg(npoints) # redefine poly_deg
 		print('poly_deg:', poly_deg)
 		with warnings.catch_warnings():
 			warnings.simplefilter("ignore")
@@ -128,6 +128,26 @@ def fit_continuum(lam, flux, local_dist=100, poly_deg=10, mode='poly', plot=Fals
 			axes[2].set_ylim(min(0.88, ylim[0]), max(1.12, ylim[1]))
 		axes[-1].set_xlabel('Rest frame wavelength ($\mathrm{\AA}$)')
 		fig.tight_layout()
+
+		# sanity check: plot residual vs flux
+		plot_res_vs_f = True
+		if plot_res_vs_f:
+			residual = flux_tofit - flux_tofit_fitted
+			figt, axest = plt.subplots(1, 2, figsize=(12, 6))
+			if sdssflux:
+				# absolute residual vs flux
+				axest[0].plot(flux_tofit / np.polyval(ppoly_ratio, lam_tofit), np.abs(residual) / np.polyval(ppoly_ratio, lam_tofit), 'ok')
+				axest[0].set_xlabel('Flux ($10^{-17}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)')
+				axest[0].set_ylabel('abs(Residual) ($10^{-17}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)')
+				# relateve residual vs flux
+				axest[1].plot(flux_tofit / np.polyval(ppoly_ratio, lam_tofit), np.abs(residual)/flux_tofit_fitted / np.polyval(ppoly_ratio, lam_tofit), 'ok')
+				axest[1].set_xlabel('Flux ($10^{-17}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)')
+				axest[1].set_ylabel('abs(Residual/Flux)')
+			figt.tight_layout()
+			polydegtxt = '' if poly_deg is None else '_deg%d'%poly_deg
+			res_vs_f_tosave = path + 'plots/contfit_residual_vs_flux_36576%s.pdf'%(polydegtxt)
+			figt.savefig(res_vs_f_tosave); print('Saved: %s'%res_vs_f_tosave)
+		
 	return flux_fitted, contpar_pack
 
 def scale_flux(item, spec):
@@ -205,12 +225,14 @@ def fluxpars2flux(fluxpars, lam):
 	if len(lam)!=len(flux): raise Exception('generated continuum len(lam)!=len(flux)')
 	return flux
 
-def fluxpar_filename(name):
+def fluxpar_filename(name, polydegtxt=''):
 	'''
 	name - sdss_filename if use sdss spectra else KOAjobID
+	polydeg - degree of polyfit for continuum fit
 	'''
+	#polydegtxt = '' if polydeg is None else '_deg%d'%(polydeg)
 	name = '.'.join(name.split('.')[:-1]) if type(name)==str else 'koa%d'%(name)
-	prefix = path + 'paras/fluxpar_%s_restframe.pickle'%(name)
+	prefix = path + 'paras/fluxpar_%s_restframe.pickle'%(name + polydegtxt)
 	return prefix
 
 def fit_sdss_cont(sdss_filename, local_dist=20, poly_deg=10, fitcont_mode='poly', plot=False, save_fluxpars=True):
@@ -225,7 +247,7 @@ def fit_sdss_cont(sdss_filename, local_dist=20, poly_deg=10, fitcont_mode='poly'
 
 	# add cont mask and contadd, in rest frame
 	class args: contmask = []; contadd = []; voigtmask = []
-	if sdss_filename == 'spec-5328-55982-0562.fits':
+	if sdss_filename == 'spec-5328-55982-0562.fits': # SDSS J095937.11+131215.5
 		args.contmask = [[1025., 1026.]]
 		args.contadd = [1029.11, 1189.54, 1195.52, 1208.55, 1211.35]
 
@@ -233,7 +255,7 @@ def fit_sdss_cont(sdss_filename, local_dist=20, poly_deg=10, fitcont_mode='poly'
 	spec_cut = su.cut_lyaforest(sdss_spec, su.lya_wave, adjust_ind=0, searchlya=False) # (3, npix)
 
 	# fit continuum in rest frame
-	flux_fitted, contpar_pack = fit_continuum(*spec_cut[:2], local_dist=local_dist, poly_deg=poly_deg, mode=fitcont_mode, plot=plot, contpar_tosave=None, args=args, autodeg=False)
+	flux_fitted, contpar_pack = fit_continuum(*spec_cut[:2], local_dist=local_dist, poly_deg=poly_deg, mode=fitcont_mode, plot=plot, contpar_tosave=None, args=args)
 
 	# save fluxpars
 	if save_fluxpars:
@@ -242,27 +264,30 @@ def fit_sdss_cont(sdss_filename, local_dist=20, poly_deg=10, fitcont_mode='poly'
 		fluxpar_tosave = fluxpar_filename(sdss_filename)
 		pkdump(fluxpars, fluxpar_tosave)
 
-def get_keck_spec(item, local_dist=100, poly_deg=10, fitcont_mode='poly', detect_gap=True, rest_frame=True, smoothwidth=30, plot=False, normalize=True, save_fluxpars=False, return_gaprange=False):
+def get_keck_spec(item, local_dist=100, poly_deg=None, fitcont_mode='poly', detect_gap=True, rest_frame=True, smoothwidth=30, plot=False, normalize=True, save_fluxpars=False, return_gaprange=False):
 	'''
 	detect_gap - whether to detect gaps in the spectra and divide spectra when fitting continuum
+	use item[KOAjobID, catalog, z, SDSS, M1450]
+	if not rest_frame: use item[z_origin]
 	'''
 	koajobid = item['KOAjobID']
 	try: catalog = item['catalog']
 	except Exception: item.at['catalog'] = 'elqs'
-	koa_spec = rk.read_koa_df(item, rest_frame=True, cut_lya=False, smoothwidth=smoothwidth) # get 1d spectra connected, array, lam, flux, error, disp
+	koa_spec = rk.read_koa_df(item, rest_frame=True, cut_lya=False, smoothwidth=smoothwidth) # get 1d spectra connected, array, lam, flux, error, disp; use item[z, KOAjobID, catalog]
 	koa_spec_nosmooth = rk.read_koa_df(item, rest_frame=True, cut_lya=False, smoothwidth=0) # get 1d spectra connected, array, lam, flux, error, disp
 
 	#  if no SDSS, scale flux to m1450
-	havesdss = rs.check_item_havesdss(item)
+	havesdss = rs.check_item_havesdss(item) # use item[SDSS]
 	havem1450 = ('M1450' in item.keys()) and not np.isnan(item['M1450'])
 	if not havesdss and havem1450: # scale flux to m1450
-		koa_spec = scale_flux(item, koa_spec) # should be in rest frame
+		print('Scale flux for:', item)
+		koa_spec = scale_flux(item, koa_spec) # should be in rest frame, use item[M1450, z]
 		koa_spec_nosmooth = scale_flux(item, koa_spec_nosmooth) # should be in rest frame
 
-	# warp up koa_spec
+	# wrap up koa_spec
 	if len(koa_spec[0]) == 0: raise Exception('spectrum is zero length')
 	if not normalize:
-		if not rest_frame: koa_spec[0] = su.obs_frame(koa_spec[0], item['z'])
+		if not rest_frame: koa_spec[0] = su.obs_frame(koa_spec[0], item['z_origin'])
 		return koa_spec[:3] # lam, flux, flux_err, disp in rest frame
 
 	# if have SDSS, convolve keck_spec_nosmooth flux by SDSS resolution (in obs frame), and compute keck.flux_smoothbysdss / sdss.flux_keckgrid ratio
@@ -370,8 +395,8 @@ def get_keck_spec(item, local_dist=100, poly_deg=10, fitcont_mode='poly', detect
 
 	# fit continuum and normalize, in rest frame
 	# ---- mask or add args for continuum fit
-	if searchlya and not item['KOAjobID']==119681: args = re.mask_add_item(item, zqso)
-	else: args = re.mask_add_item(item)
+	if searchlya and not item['KOAjobID']==119681: args = re.mask_add_item(item, zqso) # use item[KOAjobID, z]
+	else: args = re.mask_add_item(item) # use item[KOAjobID]
 	contpar_packs = []
 	lamranges = [] # lam range for each gapped section
 	for ispec in range(len(specs)):
@@ -389,6 +414,7 @@ def get_keck_spec(item, local_dist=100, poly_deg=10, fitcont_mode='poly', detect
 	fluxpars = [lamranges, contpar_packs]
 	if havesdss: fluxpars.append(ppoly_ratios)
 
+	polydegtxt = '' if poly_deg is None else '_deg%d'%poly_deg
 	if plot:
 		# plot continuum with random lam grid
 		'''
@@ -412,14 +438,16 @@ def get_keck_spec(item, local_dist=100, poly_deg=10, fitcont_mode='poly', detect
 		axp.set_xlabel('Observed frame wavelength ($\mathrm{\AA}$)')
 		figaxes[0].tight_layout()
 		# savefig
+		debug = True
 		if havesdss:
 			plot_cali_tosave = path + 'plots/calibrate_flux_%d.pdf'%item['KOAjobID']
-			fig.savefig(plot_cali_tosave); print('Saved: %s'%plot_cali_tosave)
-		plot_contfit_tosave = path + 'plots/contfit_%d.pdf'%item['KOAjobID']
+			if not debug:
+				fig.savefig(plot_cali_tosave); print('Saved: %s'%plot_cali_tosave)
+		plot_contfit_tosave = path + 'plots/contfit_%d%s.pdf'%(item['KOAjobID'], polydegtxt)
 		figaxes[0].savefig(plot_contfit_tosave); print('Saved: %s'%plot_contfit_tosave)
 
 	if save_fluxpars:
-		contfunc_tosave = fluxpar_filename(item['KOAjobID']) # save continuum paras
+		contfunc_tosave = fluxpar_filename(item['KOAjobID'], polydegtxt) # save continuum paras
 		pkdump(fluxpars, contfunc_tosave)
 		return fluxpars
 
@@ -441,18 +469,24 @@ def get_keck_spec(item, local_dist=100, poly_deg=10, fitcont_mode='poly', detect
 	else: return koa_spec_nosmooth[:3] # lam, flux, flux_err. normalized, in rest frame
 
 if __name__ == '__main__':
-	'''
-	import read_elqs as re
-	top10 = re.top10_df() # substituted
-	for ind,item in enumerate(top10.iloc):
-	'''
 	import read_ps as rp
+	import realll_vs_simll as rvs
+
 	#item = rp.top10vds_N_nosub[rp.top10vds_N_nosub.KOAjobID==9075].iloc[0]
 	#item.at['catalog'] = 'elqs'
+	kids = rvs.kid_withspec(exclude_weak=False)
 	kid = 36576
-	item = rp.top10vds_N[rp.top10vds_N.KOAjobID==kid].iloc[0]
+	poly_deg = 10
+	#for kid in kids:
 	if 1:
-		spec = get_keck_spec(item, plot=True, save_fluxpars=False)
-		plt.show()
-		#tosave = path + 'plots/contfit_%d_%d.pdf'%(ind+1, item['KOAjobID'])
-		#plt.savefig(tosave); print('Saved: %s'%tosave)
+		#item = rp.top10vds_N[rp.top10vds_N.KOAjobID==kid].iloc[0] # if kid in top10vds_N
+		item = df_all[df_all['KOAjobID']==kid].iloc[0] # if kid not in top10vds_N; but cannot set rest_frame=False
+		print(item.Name)
+		#if 1: # main
+		for poly_deg in [10]: # debug
+			#poly_deg = 20 if kid in [32118, 54447] else 10
+			spec = get_keck_spec(item, plot=True, save_fluxpars=False, poly_deg=poly_deg) # plot
+			#spec = get_keck_spec(item, plot=False, save_fluxpars=True, poly_deg=poly_deg) # save fluxpars
+			#plt.show()
+			#tosave = path + 'plots/contfit_%d_%d.pdf'%(ind+1, item['KOAjobID'])
+			#plt.savefig(tosave); print('Saved: %s'%tosave)

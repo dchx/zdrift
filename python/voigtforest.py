@@ -97,11 +97,13 @@ def voigt_residual(p, voigtfunc, lam, flux, noise, continuum=1., *args):
 	res = (flux - model) / noise
 	return res
 
-def addaline(paras, il, lam, flux, ipeak, continuum=1.):
+def addaline(paras, il, lam, flux, ipeak, continuum=1., min_lw=0.):
+	'''
+	min_lw in km/s
+	'''
 	if type(continuum) != np.ndarray or type(continuum) != list: continuum = continuum * np.ones(len(lam)) # make continuum an array
 	lam0 = lam[ipeak]
 	typical_lamwidth = dvel2dlam(typical_lw, lam0)
-	min_lw = 0. #8.
 	min_lamwidth = dvel2dlam(min_lw, lam0) # width to be greater than resolution
 	max_lw_factor = 5. # 20.
 	paras.add(para_prefix[0]+str(il), value=lam0, min=lam0-typical_lamwidth, max=lam0+typical_lamwidth) # lam0
@@ -123,17 +125,18 @@ def aicc(fitresult):
 	aicc = fitresult.aic + 2*p*(p+1.)/(n-p-1.)
 	return aicc
 
-def fit_region(lam, flux, noise, ipeaks, continuum=1., addline=True):
+def fit_region(lam, flux, noise, ipeaks, continuum=1., addline=True, min_lw=0.):
 	'''
 	Fit absorption lines in a region
 	ipeaks - (array) indexes of lam for line peaks
 	addline - whether try to add lines after fit
+	min_lw - in km/s
 	'''
 	plot = 0
 	nlines = len(ipeaks)
 	# initialize parameters
 	paras = lf.Parameters()
-	for il in range(nlines): addaline(paras, il, lam, flux, ipeaks[il], continuum=continuum)
+	for il in range(nlines): addaline(paras, il, lam, flux, ipeaks[il], continuum=continuum, min_lw=min_lw)
 	if plot: flux_guess = gs.form_spec(continuum, multivoigt_paras(paras, lam), voigt_is_tau=voigt_is_tau)
 	# fit voigt for this region
 	if len(flux) <= len(paras): return None # must have ndata > npara for leastsq
@@ -148,7 +151,7 @@ def fit_region(lam, flux, noise, ipeaks, continuum=1., addline=True):
 		if nlines == 0: il = -1 # no line detected in region
 		while fails < max_fails: # add a line at a time
 			il += 1
-			addaline(paras, il, lam, flux, int(len(lam)/2), continuum=continuum)
+			addaline(paras, il, lam, flux, int(len(lam)/2), continuum=continuum, min_lw=min_lw)
 			paras[para_prefix[0]+str(il)].set(value=np.mean(lam), min=min(lam), max=max(lam)) # adjust lam0 to be mean(lam)
 			if para_set=='fLfG': paras[para_prefix[1]+str(il)].set(value=(np.mean(flux)-np.mean(continuum))) # adjust AL to be mean(flux-cont)
 			if len(flux) - len(paras) <= 1: break # must have ndata - npara > 1 for aicc
@@ -188,12 +191,13 @@ def results2initparray(results): return paras2parray([result.initparams for resu
 def pfile2parray(pfile): return results2parray(pkloadgzip(pfile))
 def pfile2flux(pfile, lam, continuum=1.): return gs.parray2flux(pfile2parray(pfile), lam, continuum, voigt_is_tau=voigt_is_tau, v1d=v1d)
 
-def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut=1.5, plot=False, chkind=False, verbose=True, gapranges=None):
+def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut=1.5, plot=False, chkind=False, verbose=True, gapranges=None, min_lw=0.):
 	'''
 	Spectrum should be normalized to [0,1]
 	addline - whether try to add lines after fit
 	chkind - whether to return region_indlims from find_regions
 	gapranges - [[lamleft, lamright], ...] if there are gaps in the input spec, fill them in with random lines drawn from existing distribution
+	min_lw - minimum line width when fitting in km/s
 	'''
 	# ----------- divide spectra to regions -----------
 	tosave_findreg = tosave[:tosave.rfind('.')] + '_findreg' + tosave[tosave.rfind('.'):]
@@ -239,7 +243,7 @@ def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut
 				#         fit line
 				print('Fitting %d lines for region %d/%d ...'%(nlines, ireg+1, len(region_indlims)))
 				t2 = time.time()
-				result_reg = fit_region(lam_reg, flux_reg, noise_reg, ipeaks_reg, continuum=continuum, addline=addline)
+				result_reg = fit_region(lam_reg, flux_reg, noise_reg, ipeaks_reg, continuum=continuum, addline=addline, min_lw=min_lw)
 				print('%.2f minutes. Total %.2f minutes.'%((time.time()-t2)/60., (time.time()-t1)/60.))
 				if tosave: pkdumpgzip(result_reg, tosave_reg)
 			if result_reg != None: results.append(result_reg)
@@ -288,7 +292,7 @@ def fit_forest(lam, flux, noise, continuum=1., tosave=None, addline=True, CSLcut
 		print('median observed line width: %.2f km/s'%np.median(fwhm_para))
 		plt.xlabel('line width FWHM (km/s)')
 		'''
-		ax.set_xlabel('$\lambda$ ($\mathrm{\AA}$)')
+		ax.set_xlabel(r'$\lambda$ ($\mathrm{\AA}$)')
 		ax.set_ylabel('Normalized flux')
 		fig.tight_layout()
 
@@ -303,7 +307,13 @@ if __name__ == '__main__':
 	import generate_spec as gs
 	import read_elqs as re
 	import read_ps as rp
+	import realll_vs_simll as rvs
 	top10 = re.top10m14
+
+    class keck_args:
+	    fitcont_deg = 10 # added after referee report
+	    min_lw = 5. # km/s
+	minlwtxt = '' if min_lw==0 else '_minlw%skms'%min_lw
 
 	# check nlines
 	'''
@@ -319,7 +329,7 @@ if __name__ == '__main__':
 		for vfaddline in [False, True]:
 			addlinetxt = '_fitaddline' if vfaddline else ''
 			print('addline = %d'%(vfaddline), end=', ')
-			pfile = path + 'paras/voigtforest_bestparray_%d_smooth30pix_dist100_degNone%s_CSLcut1.5.pzip'%(kid, addlinetxt)
+			pfile = path + 'paras/voigtforest_bestparray_%d_smooth30pix_dist100_deg%s%s_CSLcut1.5%s.pzip'%(kid, keck_args.fitcont_deg, addlinetxt, minlwtxt)
 			parray = pkloadgzip(pfile, verbose=False)
 			if vfaddline: n_noadd = nl
 			nl = parray.shape[1]
@@ -339,18 +349,22 @@ if __name__ == '__main__':
 	# plot figure
 	rest_frame = True # if plot in rest frame
 	vfaddline = True
+
 	addlinetxt = '_fitaddline' if vfaddline else ''
+	kid = 36576
+	kids = rvs.kid_withspec(exclude_weak=False)
+	#item = df_all.loc[12850]
 	#for item in top10.iloc:
+	#for kid in kids:
 	if 1:
-		#item = df_all.loc[12850]
-		kid = 36576
-		item = rp.top10vds_N[rp.top10vds_N.KOAjobID==kid].iloc[0]
-		koa_spec = cf.get_keck_spec(item) # in rest frame
+		#item = rp.top10vds_N[rp.top10vds_N.KOAjobID==kid].iloc[0] # if kid in top10vds_N
+		item = df_all[df_all['KOAjobID']==kid].iloc[0] # if kid not in top10vds_N; but cannot set rest_frame=False
+		koa_spec = cf.get_keck_spec(item, poly_deg=keck_args.fitcont_deg) # in rest frame
 		lam, kflux, knoise = koa_spec
 
 		# voigtfit
-		vffile = path + 'paras/voigtforest_bestp_%d_smooth30pix_dist100_degNone%s_CSLcut1.5.pzip'%(item['KOAjobID'], addlinetxt)
-		results = fit_forest(*koa_spec, tosave=vffile, addline=vfaddline, plot=False)
+		vffile = path + 'paras/voigtforest_bestp_%d_smooth30pix_dist100_deg%s%s_CSLcut1.5%s.pzip'%(item['KOAjobID'], keck_args.fitcont_deg, addlinetxt, minlwtxt)
+		results = fit_forest(*koa_spec, tosave=vffile, addline=vfaddline, plot=False, min_lw=min_lw)
 		parray_vf = results2parray(results)
 		flux_vf = gs.parray2flux(parray_vf, lam, v1d=gs.voigt1d)
 
@@ -375,16 +389,19 @@ if __name__ == '__main__':
 		axes[1].plot(lam, flux_gen, 'r')
 		axes[1].set_ylim([-0.4, 1.4])
 		axes[1].set_xlim([1100., 1150.])
-		axes[1].set_xlabel('Rest frame wavelength ($\mathrm{\AA}$)')
+		axes[1].set_xlabel(r'Rest frame wavelength ($\mathrm{\AA}$)')
 		axes[1].set_ylabel('Simulated spectrum')
+
+		#axes[0].set_xlim([1125., 1127.]) # to zoomin in debugging
 
 		# add x axis showing observed frame wavelength
 		axp = axes[0].twiny()
 		lamlim_obsframe = su.obs_frame(np.array(axes[0].get_xlim()), zqso)
 		axp.set_xlim(lamlim_obsframe)
-		axp.set_xlabel('Observed frame wavelength ($\mathrm{\AA}$)')
+		axp.set_xlabel(r'Observed frame wavelength ($\mathrm{\AA}$)')
 
 		fig.tight_layout()
-		tosave = path + 'plots/voigtforest2genspec_%d%s.pdf'%(item['KOAjobID'], addlinetxt)
+		#tosave = path + 'plots/voigtforest2genspec_%d%s_zoom1125-1127.pdf'%(item['KOAjobID'], addlinetxt) # to zoomin in debugging
+		tosave = path + 'plots/voigtforest2genspec_%d_deg%s%s%s.pdf'%(item['KOAjobID'], keck_args.fitcont_deg, addlinetxt, minlwtxt)
 		fig.savefig(tosave);print('Saved:%s'%tosave)
-		plt.show()
+		#plt.show()

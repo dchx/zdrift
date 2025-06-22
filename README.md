@@ -1,8 +1,8 @@
-# Redshift drift
+End-to-end redshift drift simulation tool
 
 ## Spectral Simulation
 
-### Generate spectra
+### Generate Lyman alpha forest spectra
 
 #### From Keck HIRES Data
 - `read_koa.py` - read KOA extracted spectra

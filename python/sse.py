@@ -44,11 +44,12 @@ def keck_intrinsic_lw(parray, R_keck, smoothwidth=None, dlam=None):
 	parray[2:] = paras_adj
 	return parray
 
-def keck_template(item, shiftmode, dx, fitcont_dist, fitcont_deg, fitcont_mode, vfaddline, CSL_cut, fix, res_fixres=2e4, dlam_fixresele=0.0125, res_ele=4., smoothwidth=30, verbose=True, cosmo=cosmology.Planck15):
+def keck_template(item, shiftmode, dx, fitcont_dist, fitcont_deg, fitcont_mode, vfaddline, CSL_cut, fix, res_fixres=2e4, dlam_fixresele=0.0125, res_ele=4., smoothwidth=30, verbose=True, cosmo=cosmology.Planck15, min_lw=0.):
 	'''
 	modified mk_qso_spec3_dz
 	from keck data to template
 	smooth - whether smooth during continuum fit
+	min_lw - (km/s) minimum line width for voigt fitting
 	'''
 	saveid = '%d'%item['KOAjobID']
 	fitconttxt = '_dist%d'%fitcont_dist + ('_deg%s'%fitcont_deg if fitcont_mode=='poly' else '_cont%s'%fitcont_mode)
@@ -56,15 +57,16 @@ def keck_template(item, shiftmode, dx, fitcont_dist, fitcont_deg, fitcont_mode, 
 	smoothtxt = '_smooth%dpix'%smoothwidth if smoothwidth!=None else '_nosmooth'
 	vfaddlinetxt = '_fitaddline' if vfaddline else ''
 	csltxt = '_CSLcut%.1f'%CSL_cut
+	minlwtxt = '_minlw%skms'%min_lw
 
 	templam_file = path + 'data/keck_linelist/keck_lam_zqso%.3f%s.pickle'%(item['z_origin'],restxt)
-	tempflux_file = path + 'data/keck_linelist/keck_flux_%s_zqso%.3f_%s%.3e.pickle'%(saveid + fitconttxt + restxt + smoothtxt + vfaddlinetxt, item['z_origin'], shiftmode, dx)
+	tempflux_file = path + 'data/keck_linelist/keck_flux_%s_zqso%.3f_%s%.3e%s.pickle'%(saveid + fitconttxt + restxt + smoothtxt + vfaddlinetxt, item['z_origin'], shiftmode, dx, minlwtxt)
 	if os.path.exists(tempflux_file): # assuming templam_file exists too
 		lam = pkload(templam_file, verbose=verbose)
 		flux_temp = pkload(tempflux_file, verbose=verbose)
 	else:
 		# voigtforest tosave
-		keckvf_file = path + 'paras/voigtforest_bestp_%s.pzip'%(saveid + smoothtxt + fitconttxt + vfaddlinetxt + csltxt) # assume vf.para_set=='blgNHI'
+		keckvf_file = path + 'paras/voigtforest_bestp_%s.pzip'%(saveid + smoothtxt + fitconttxt + vfaddlinetxt + csltxt + minlwtxt) # assume vf.para_set=='blgNHI'
 		keckvfparray_file = keckvf_file.replace('bestp', 'bestparray')
 		if os.path.exists(keckvfparray_file):
 			vfparray = pkloadgzip(keckvfparray_file, verbose=verbose)
@@ -73,7 +75,7 @@ def keck_template(item, shiftmode, dx, fitcont_dist, fitcont_deg, fitcont_mode, 
 			(klam, kflux, knoise), gapranges = cf.get_keck_spec(item, fitcont_dist, fitcont_deg, fitcont_mode, rest_frame=True, smoothwidth=30, normalize=True, return_gaprange=True) # form spec in rest frame
                 
 			# fit voigtforest, in rest frame
-			vfresults = vf.fit_forest(klam, kflux, knoise, tosave=keckvf_file, addline=vfaddline, CSLcut=CSL_cut, verbose=verbose, plot=False)
+			vfresults = vf.fit_forest(klam, kflux, knoise, tosave=keckvf_file, addline=vfaddline, CSLcut=CSL_cut, verbose=verbose, plot=False, min_lw=min_lw)
 			vfparray = vf.results2parray(vfresults)
                 
 			# adjust parameters by Keck resolution resolution, no matter frame
@@ -116,7 +118,8 @@ def get_template(linelistmode, fixres, shiftmode, dx, genspec_args, keck_args, r
 		                 shiftmode=shiftmode, ispec=genspec_args.ispec, verbose=verbose, cosmo=cosmo)
 	elif linelistmode == 'keck':
 		lam, flux_temp = keck_template(keck_args.item, shiftmode, dx, keck_args.fitcont_dist, keck_args.fitcont_deg, keck_args.fitcont_mode,\
-		                 keck_args.vfaddline, keck_args.CSL_cut, fixres, res_fixres, dlam_fixresele, res_ele=res_ele, smoothwidth=keck_args.smoothwidth, verbose=verbose, cosmo=cosmo)
+		                 keck_args.vfaddline, keck_args.CSL_cut, fixres, res_fixres, dlam_fixresele, res_ele=res_ele, smoothwidth=keck_args.smoothwidth,\
+		                 verbose=verbose, cosmo=cosmo, min_lw=keck_args.min_lw)
 	return lam, flux_temp
 	
 def zero_runs(a): # from https://stackoverflow.com/questions/24885092/finding-the-consecutive-zeros-in-a-numpy-array
