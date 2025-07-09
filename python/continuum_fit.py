@@ -240,7 +240,7 @@ def fit_sdss_cont(sdss_filename, local_dist=20, poly_deg=10, fitcont_mode='poly'
 	fit sdss spectra continuum
 	  sdss_spec - lam, flux, flux_err
 	'''
-	sdssfile = path + 'data/sdss/' + sdss_filename
+	sdssfile = glob.glob(path + 'data/sdss/**/' + sdss_filename, recursive=True)[0]
 	sdss = rs.read_sdss_file_class(sdssfile)
 	sdss.lam = su.rest_frame(sdss.lam, sdss.zqso) # to rest frame
 	sdss_spec = np.vstack([sdss.lam, sdss.flux, sdss.flux_err]) # (3, npix)
@@ -292,7 +292,7 @@ def get_keck_spec(item, local_dist=100, poly_deg=None, fitcont_mode='poly', dete
 
 	# if have SDSS, convolve keck_spec_nosmooth flux by SDSS resolution (in obs frame), and compute keck.flux_smoothbysdss / sdss.flux_keckgrid ratio
 	if havesdss:
-		sdssfile = path + 'data/sdss/' + item['SDSS']
+		sdssfile = glob.glob(path + 'data/sdss/**/' + item['SDSS'], recursive=True)[0]
 		sdss = rs.read_sdss_file_class(sdssfile)
 		keck, sdss = rs.smoothKeckBysdss_calcRatio(su.obs_frame(koa_spec_nosmooth[0], item['z']), koa_spec_nosmooth[1], sdss) # sdss in obs frame, convert keck to obs frame
 		koa_spec_nosmooth = np.vstack([koa_spec_nosmooth, keck.flux_smoothbysdss, keck.ratio]) # lam, flux, error, disp, flux_smoothbysdss, ratio, in rest frame

@@ -123,7 +123,7 @@ def read_sdss_file(filepathname,z_plot_rest_frame=0.):
 
 def read_sdss_plate(plate,mjd,fiberid,z_plot_rest_frame=0.):
 	#filepathname=path+'data/SDSS/dr14/all/spec-%04d-%05d-%04d.fits'%(plate,mjd,fiberid)
-	filepathname=path+'data/sdss/spec-%s-%s-%04d.fits'%(plate,mjd,fiberid)
+	filepathname=glob.glob(path+'data/sdss/**/spec-%s-%s-%04d.fits'%(plate,mjd,fiberid), recursive=True)[0]
 	return read_sdss_file(filepathname,z_plot_rest_frame=z_plot_rest_frame)
 
 def read_sdss_koajobid(koajobid,z_plot_rest_frame=0.):
@@ -139,7 +139,7 @@ def read_sdss_top11koajobid(koajobid, plot_rest_frame=False):
 		spec = read_sdss_plate(*pmf, z_plot_rest_frame=z_plot_rest_frame)
 	else: # ned data
 		rank = item.Rank
-		nedfile = glob.glob(path + 'data/sdss/%d.sub.*_NED.txt'%rank)
+		nedfile = glob.glob(path + 'data/sdss/sdss/%d.sub.*_NED.txt'%rank)
 		if len(nedfile)==1:
 			nedfile = nedfile[0]
 			spec = read_ned_file(nedfile, z_plot_rest_frame)

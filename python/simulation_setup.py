@@ -486,10 +486,10 @@ if __name__ == '__main__':
 			elif varname=='period': axall.set_xlabel('Time (year)') 
 			elif varname=='z': axall.set_xlabel('$z$') 
 			if varname=='z':
-				axall.set_ylabel('$\mathrm{d}v/\mathrm{d}t$ (cm s$^{-1}$ yr$^{-1}$)') # dvdt
+				axall.set_ylabel(r'$\mathrm{d}v/\mathrm{d}t$ (cm s$^{-1}$ yr$^{-1}$)') # dvdt
 				tosave = path + 'plots/dvdt_%dyr_%dm_top%s%s_N%s.pdf'%(obs_setup.period, obs_setup.aperture, nqso, selection, contdegtxt)
 			else:
-				axall.set_ylabel('$|\dot{v}|/\sigma_\dot{v}$') # vdot/sigma
+				axall.set_ylabel(r'$|\dot{v}|/\sigma_\dot{v}$') # vdot/sigma
 				tosave = path + 'plots/vds_%s_top%s%s_N%s.pdf'%(varname, nqso, selection, contdegtxt)
 			figall.savefig(tosave); print('Saved: %s'%tosave)
 			#plt.show()
